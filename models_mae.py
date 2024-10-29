@@ -101,9 +101,9 @@ class MaskedAutoencoderViT(nn.Module):
         assert imgs.shape[2] == imgs.shape[3] and imgs.shape[2] % p == 0
 
         h = w = imgs.shape[2] // p
-        x = imgs.reshape(shape=(imgs.shape[0], 3, h, p, w, p))
+        x = imgs.reshape(shape=(imgs.shape[0], imgs.shape[1], h, p, w, p))
         x = torch.einsum('nchpwq->nhwpqc', x)
-        x = x.reshape(shape=(imgs.shape[0], h * w, p**2 * 3))
+        x = x.reshape(shape=(imgs.shape[0], h * w, p**2 * imgs.shape[1]))
         return x
 
     def unpatchify(self, x):
@@ -113,11 +113,12 @@ class MaskedAutoencoderViT(nn.Module):
         """
         p = self.patch_embed.patch_size[0]
         h = w = int(x.shape[1]**.5)
+        c = x.shape[-1] // p ** 2
         assert h * w == x.shape[1]
         
-        x = x.reshape(shape=(x.shape[0], h, w, p, p, 3))
+        x = x.reshape(shape=(x.shape[0], h, w, p, p, c))
         x = torch.einsum('nhwpqc->nchpwq', x)
-        imgs = x.reshape(shape=(x.shape[0], 3, h * p, h * p))
+        imgs = x.reshape(shape=(x.shape[0], c, h * p, h * p))
         return imgs
 
     def random_masking(self, x, mask_ratio):
@@ -244,7 +245,7 @@ def mae_vit_huge_patch14_dec512d8b(**kwargs):
     return model
 
 
-def mae_vit_large_patch16_dec512d8b_gray(**kwargs):
+def mae_vit_large_patch16_dec256d8b_gray(**kwargs):
     model = MaskedAutoencoderViT(
         patch_size=16, embed_dim=512, in_chans=1, depth=24, num_heads=16,
         decoder_embed_dim=256, decoder_depth=8, decoder_num_heads=16,
@@ -256,4 +257,4 @@ def mae_vit_large_patch16_dec512d8b_gray(**kwargs):
 mae_vit_base_patch16 = mae_vit_base_patch16_dec512d8b  # decoder: 512 dim, 8 blocks
 mae_vit_large_patch16 = mae_vit_large_patch16_dec512d8b  # decoder: 512 dim, 8 blocks
 mae_vit_huge_patch14 = mae_vit_huge_patch14_dec512d8b  # decoder: 512 dim, 8 blocks
-mae_vit_large_patch_16 = mae_vit_large_patch16_dec512d8b_gray
+mae_vit_large_patch_16_gray = mae_vit_large_patch16_dec256d8b_gray

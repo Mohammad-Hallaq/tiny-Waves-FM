@@ -19,6 +19,7 @@ from pathlib import Path
 import torch
 import torch.backends.cudnn as cudnn
 from torch.utils.tensorboard import SummaryWriter
+import torchvision
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 
@@ -118,6 +119,8 @@ def main(args):
     # simple augmentation
     transform_train = transforms.Compose([
             transforms.Grayscale(),
+            transforms.Resize((224, 224), antialias=True,
+                              interpolation=torchvision.transforms.InterpolationMode.BICUBIC),
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.5], std=[0.5])])
     dataset_train = datasets.ImageFolder(args.data_path, transform=transform_train)
