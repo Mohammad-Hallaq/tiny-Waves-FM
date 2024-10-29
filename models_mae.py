@@ -229,6 +229,14 @@ def mae_vit_base_patch16_dec512d8b(**kwargs):
     return model
 
 
+def mae_vit_audio(**kwargs):
+    model = MaskedAutoencoderViT(
+        patch_size=16, embed_dim=768, in_chans=1, depth=12, num_heads=12,
+        decoder_embed_dim=512, decoder_num_heads=16,
+        mlp_ratio=4, norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
+    return model
+
+
 def mae_vit_large_patch16_dec512d8b(**kwargs):
     model = MaskedAutoencoderViT(
         patch_size=16, embed_dim=1024, depth=24, num_heads=16,
@@ -258,3 +266,4 @@ mae_vit_base_patch16 = mae_vit_base_patch16_dec512d8b  # decoder: 512 dim, 8 blo
 mae_vit_large_patch16 = mae_vit_large_patch16_dec512d8b  # decoder: 512 dim, 8 blocks
 mae_vit_huge_patch14 = mae_vit_huge_patch14_dec512d8b  # decoder: 512 dim, 8 blocks
 mae_vit_large_patch_16_gray = mae_vit_large_patch16_dec256d8b_gray
+mae_vit_audio = mae_vit_audio
