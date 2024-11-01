@@ -21,8 +21,7 @@ import torch.backends.cudnn as cudnn
 from torch.utils.tensorboard import SummaryWriter
 import torchvision
 import torchvision.transforms as transforms
-import torchvision.datasets as datasets
-from SpectrogramImages import SpectrogramImages
+from dataset_classes.spectrogram_images import SpectrogramImages
 
 import timm.optim.optim_factory as optim_factory
 

@@ -24,15 +24,17 @@ from torch.utils.tensorboard import SummaryWriter
 import util.lr_decay as lrd
 import util.misc as misc
 from util.misc import NativeScalerWithGradNormCount as NativeScaler
+from util.pos_embed import interpolate_pos_embed
+from timm.layers import trunc_normal_
 
-import models_segmentation
+import models_vit
 
-from engine_finetune_segmentation import train_one_epoch, evaluate
-from dataset_classes.segmentation_dataset import SegmentationDataset
+from engine_finetune import train_one_epoch, evaluate
+from dataset_classes.csi_sensing import CSISensingDataset
 
 
 def get_args_parser():
-    parser = argparse.ArgumentParser('MAE fine-tuning for spectrogram segmentation', add_help=False)
+    parser = argparse.ArgumentParser('MAE fine-tuning for CSI sensing', add_help=False)
     parser.add_argument('--batch_size', default=64, type=int,
                         help='Batch size per GPU (effective batch size is batch_size * accum_iter * # gpus')
     parser.add_argument('--epochs', default=50, type=int)
@@ -104,7 +106,7 @@ def get_args_parser():
     parser.add_argument('--finetune', default='',
                         help='finetune from checkpoint')
     parser.add_argument('--global_pool', action='store_true')
-    parser.set_defaults(global_pool=True)
+
     parser.add_argument('--cls_token', action='store_false', dest='global_pool',
                         help='Use class token instead of global pool for classification')
 
@@ -161,11 +163,9 @@ def main(args):
     np.random.seed(seed)
 
     cudnn.benchmark = True
-    dataset_train = SegmentationDataset(dataset_dir=Path('../QoherentLnC_V2/SegmentationData/Train/LTE_NR'))
-    dataset_val = SegmentationDataset(dataset_dir=Path('../QoherentLnC_V2/SegmentationData/Test/LTE_NR'))
+    dataset_train = CSISensingDataset(Path('../datasets/NTU-Fi_HAR/train'))
+    dataset_val = CSISensingDataset(Path('../datasets/NTU-Fi_HAR/test'))
 
-
-    # if True:  # args.distributed:
     num_tasks = misc.get_world_size()
     global_rank = misc.get_rank()
     sampler_train = torch.utils.data.DistributedSampler(
@@ -181,9 +181,6 @@ def main(args):
             dataset_val, num_replicas=num_tasks, rank=global_rank, shuffle=True)  # shuffle=True to reduce monitor bias
     else:
         sampler_val = torch.utils.data.SequentialSampler(dataset_val)
-    # else:
-    #     sampler_train = torch.utils.data.RandomSampler(dataset_train)
-    #     sampler_val = torch.utils.data.SequentialSampler(dataset_val)
 
     if global_rank == 0 and args.log_dir is not None and not args.eval:
         os.makedirs(args.log_dir, exist_ok=True)
@@ -216,20 +213,32 @@ def main(args):
     #         prob=args.mixup_prob, switch_prob=args.mixup_switch_prob, mode=args.mixup_mode,
     #         label_smoothing=args.smoothing, num_classes=args.nb_classes)
     
-    model = models_segmentation.__dict__[args.model]()
+    model = models_vit.__dict__[args.model](global_pool=args.global_pool, num_classes=args.nb_classes)
+
 
     if args.finetune and not args.eval:
         checkpoint = torch.load(args.finetune, map_location='cpu')
 
         print("Load pre-trained checkpoint from: %s" % args.finetune)
         checkpoint_model = checkpoint['model']
-        del checkpoint_model['decoder_pred.weight']
-        del checkpoint_model['decoder_pred.bias']
-        del checkpoint_model['mask_token']
+        state_dict = model.state_dict()
+        for k in ['head.weight', 'head.bias', 'pos_embed']:
+            if k in checkpoint_model and checkpoint_model[k].shape != state_dict[k].shape:
+                print(f"Removing key {k} from pretrained checkpoint")
+                del checkpoint_model[k]
+        checkpoint_model['patch_embed.proj.weight'] = checkpoint_model['patch_embed.proj.weight'].expand(-1, 3, -1, -1)
 
         # load pre-trained model
         msg = model.load_state_dict(checkpoint_model, strict=False)
         print(msg)
+
+        if args.global_pool:
+            assert set(msg.missing_keys) == {'head.weight', 'head.bias', 'fc_norm.weight', 'fc_norm.bias'}
+        else:
+            assert set(msg.missing_keys) == {'head.weight', 'head.bias'}
+
+        # manually initialize fc layer
+        trunc_normal_(model.head.weight, std=2e-5)
 
     model.freeze_encoder()
     model.to(device)
@@ -302,6 +311,7 @@ def main(args):
 
         if log_writer is not None:
             log_writer.add_scalar('perf/test_acc1', test_stats['acc1'], epoch)
+            log_writer.add_scalar('perf/test_acc3', test_stats['acc3'], epoch)
             log_writer.add_scalar('perf/test_loss', test_stats['loss'], epoch)
 
         log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},

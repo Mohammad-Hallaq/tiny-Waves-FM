@@ -118,11 +118,12 @@ def main(args):
 
     # simple augmentation
     transform_train = transforms.Compose([
-            transforms.Grayscale(),
-            transforms.Resize((224, 224), antialias=True,
-                              interpolation=torchvision.transforms.InterpolationMode.BICUBIC),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.5], std=[0.5])])
+        transforms.functional.pil_to_tensor,
+        transforms.Lambda(lambda x: 10 * torch.log10(x + 1e-8)),
+        transforms.Resize((224, 224), antialias=True,
+                          interpolation=torchvision.transforms.InterpolationMode.BICUBIC),  # Resize
+        transforms.Normalize(mean=[0.5], std=[0.5])  # Normalize
+    ])
     dataset_train = datasets.ImageFolder(args.data_path, transform=transform_train)
     print(dataset_train)
 

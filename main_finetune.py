@@ -21,22 +21,20 @@ import torch
 import torch.backends.cudnn as cudnn
 from torch.utils.tensorboard import SummaryWriter
 
-import timm
-
-assert timm.__version__ == "0.3.2" # version check
+# assert timm.__version__ == "0.3.2" # version check
 from timm.models.layers import trunc_normal_
 from timm.data.mixup import Mixup
 from timm.loss import LabelSmoothingCrossEntropy, SoftTargetCrossEntropy
 
 import util.lr_decay as lrd
 import util.misc as misc
-from util.datasets import build_dataset
 from util.pos_embed import interpolate_pos_embed
 from util.misc import NativeScalerWithGradNormCount as NativeScaler
 
 import models_vit
 
 from engine_finetune import train_one_epoch, evaluate
+from dataset_classes.segmentation_dataset import SegmentationDataset
 
 
 def get_args_parser():
@@ -169,9 +167,9 @@ def main(args):
     np.random.seed(seed)
 
     cudnn.benchmark = True
+    dataset_train = SegmentationDataset(dataset_dir=Path('../QoherentLnC_V2/SegmentationData/Train/LTE_NR'))
+    dataset_val = SegmentationDataset(dataset_dir=Path('../QoherentLnC_V2/SegmentationData/Test/LTE_NR'))
 
-    dataset_train = build_dataset(is_train=True, args=args)
-    dataset_val = build_dataset(is_train=False, args=args)
 
     if True:  # args.distributed:
         num_tasks = misc.get_world_size()
