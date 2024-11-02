@@ -6,6 +6,7 @@ from torchvision.transforms import Lambda, Compose, Resize, InterpolationMode, N
 from torch.utils.data import Dataset
 from scipy.io import loadmat
 from pathlib import Path
+import numpy as np
 
 
 class CSISensingDataset(Dataset):
@@ -25,20 +26,20 @@ class CSISensingDataset(Dataset):
     def compute_stats(self):
         transforms = Compose([Lambda(lambda x: torch.as_tensor(x, dtype=torch.float32)),
                               Resize(self.img_size, antialias=True, interpolation=InterpolationMode.BICUBIC)])
-        min_val, max_val = torch.inf, -torch.inf
+        min_val, max_val = np.inf, -np.inf
         for sample_name in self.file_list:
             csi = loadmat(os.path.join(self.root_dir, sample_name))['CSIamp'].reshape(3, 114, -1)
             csi = transforms(csi)
             min_val = min(min_val, torch.min(csi).item())
             max_val = max(max_val, torch.max(csi).item())
 
-        mu, std = 0, 0
+        mu, std = torch.zeros((3,)), torch.zeros((3,))
         for sample_name in self.file_list:
             csi = loadmat(os.path.join(self.root_dir, sample_name))['CSIamp'].reshape(3, 114, -1)
             csi = transforms(csi)
             csi = (csi - min_val) / (max_val - min_val)
-            mu += torch.mean(csi)
-            std += torch.std(csi)
+            mu += torch.mean(csi, dim=(1, 2))
+            std += torch.std(csi, dim=(1, 2))
 
         mu /= len(self.file_list)
         std /= len(self.file_list)
@@ -67,3 +68,5 @@ class CSISensingDataset(Dataset):
     def __len__(self):
         return len(self.file_list)
 
+
+dataset = CSISensingDataset(Path('../../datasets/NTU-Fi_HAR/train'))
