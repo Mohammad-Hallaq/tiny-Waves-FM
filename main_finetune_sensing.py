@@ -20,6 +20,7 @@ from pathlib import Path
 import torch
 import torch.backends.cudnn as cudnn
 from torch.utils.tensorboard import SummaryWriter
+from torchvision import transforms
 
 import util.lr_decay as lrd
 import util.misc as misc
@@ -161,7 +162,13 @@ def main(args):
     np.random.seed(seed)
 
     cudnn.benchmark = True
-    dataset_train = CSISensingDataset(Path('../datasets/NTU-Fi_HAR/train'))
+
+    augment_transforms = transforms.Compose([
+        transforms.RandomResizedCrop((224, 224), scale=(0.85, 1.0), interpolation=transforms.InterpolationMode.BICUBIC),
+        transforms.RandomHorizontalFlip(),
+        transforms.ColorJitter(brightness=(0.9, 1.1), contrast=(0.9, 1.1))
+    ])
+    dataset_train = CSISensingDataset(Path('../datasets/NTU-Fi_HAR/train'), augment_transforms=augment_transforms)
     dataset_val = CSISensingDataset(Path('../datasets/NTU-Fi_HAR/test'))
 
     num_tasks = misc.get_world_size()

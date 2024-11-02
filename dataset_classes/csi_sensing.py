@@ -9,7 +9,7 @@ from pathlib import Path
 
 
 class CSISensingDataset(Dataset):
-    def __init__(self, root_dir, img_size=(224, 224)):
+    def __init__(self, root_dir, img_size=(224, 224), augment_transforms=None):
         self.root_dir = root_dir
         self.file_list = os.listdir(Path(root_dir))
         self.img_size = img_size
@@ -20,6 +20,7 @@ class CSISensingDataset(Dataset):
                                    Lambda(lambda x: (x - self.min_val) / (self.max_val - self.min_val)),
                                    Normalize(self.mu, self.std)
                                    ])
+        self.augment_transforms = augment_transforms
 
     def compute_stats(self):
         transforms = Compose([Lambda(lambda x: torch.as_tensor(x, dtype=torch.float32)),
@@ -57,7 +58,11 @@ class CSISensingDataset(Dataset):
         csi = csi.reshape(3, 114, -1)
         label_name = self._split_at_number(sample_name)
         label_index = self.labels.index(label_name)
-        return self.transforms(csi), torch.as_tensor(label_index, dtype=torch.long)
+        if self.augment_transforms:
+            csi = self.augment_transforms(self.transforms(csi))
+        else:
+            csi = self.transforms(csi)
+        return csi, torch.as_tensor(label_index, dtype=torch.long)
 
     def __len__(self):
         return len(self.file_list)
