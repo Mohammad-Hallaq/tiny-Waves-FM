@@ -24,8 +24,11 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
         super(VisionTransformer, self).__init__(**kwargs)
         self.global_pool = global_pool
 
-    def freeze_encoder(self):
-        for param in self.blocks.parameters():
+    def freeze_encoder(self, num_blocks=None):
+        if num_blocks is None:
+            num_blocks = self.depth
+
+        for param in self.blocks[:num_blocks].parameters():
             param.requires_grad = False
 
 
