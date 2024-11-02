@@ -24,8 +24,8 @@ from torch.utils.tensorboard import SummaryWriter
 import util.lr_decay as lrd
 import util.misc as misc
 from util.misc import NativeScalerWithGradNormCount as NativeScaler
-from util.pos_embed import interpolate_pos_embed
 from timm.layers import trunc_normal_
+from timm.loss import LabelSmoothingCrossEntropy
 
 import models_vit
 
@@ -269,10 +269,10 @@ def main(args):
     # if mixup_fn is not None:
     #     # smoothing is handled with mixup label transform
     #     criterion = SoftTargetCrossEntropy()
-    # elif args.smoothing > 0.:
-    #     criterion = LabelSmoothingCrossEntropy(smoothing=args.smoothing)
-    # else:
-    criterion = torch.nn.CrossEntropyLoss()
+    if args.smoothing > 0.:
+        criterion = LabelSmoothingCrossEntropy(smoothing=args.smoothing)
+    else:
+        criterion = torch.nn.CrossEntropyLoss()
 
     print("criterion = %s" % str(criterion))
 
