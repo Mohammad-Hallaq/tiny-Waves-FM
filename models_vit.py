@@ -23,15 +23,14 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
     def __init__(self, global_pool=False, **kwargs):
         super(VisionTransformer, self).__init__(**kwargs)
 
-        self.global_pool = global_pool
-        if self.global_pool:
+        if global_pool:
             norm_layer = kwargs['norm_layer']
             embed_dim = kwargs['embed_dim']
             self.fc_norm = norm_layer(embed_dim)
-
+            self.global_pool = 'avg'
             del self.norm  # remove the original norm
 
-    def forward(self, x):
+    def forward_features(self, x):
         x = self.patch_embed(x)
 
         cls_tokens = self.cls_token.expand(x.shape[0], -1, -1)  # stole cls_tokens impl from Phil Wang, thanks
