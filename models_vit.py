@@ -26,7 +26,7 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
 
     def freeze_encoder(self, num_blocks=None):
         if num_blocks is None:
-            num_blocks = self.depth
+            num_blocks = len(self.blocks)
 
         for param in self.blocks[:num_blocks].parameters():
             param.requires_grad = False
