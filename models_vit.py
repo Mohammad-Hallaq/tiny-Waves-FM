@@ -29,6 +29,8 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
             self.fc_norm = norm_layer(embed_dim)
             self.global_pool = 'avg'
             del self.norm  # remove the original norm
+        else:
+            self.global_pool = 'token'
 
     def forward_features(self, x):
         x = self.patch_embed(x)
@@ -41,7 +43,7 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
         for blk in self.blocks:
             x = blk(x)
 
-        if self.global_pool:
+        if self.global_pool == 'avg':
             x = x[:, 1:, :].mean(dim=1)  # global pool without cls token
             outcome = self.fc_norm(x)
         else:
