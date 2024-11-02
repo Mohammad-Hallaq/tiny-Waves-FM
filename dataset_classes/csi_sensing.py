@@ -62,6 +62,3 @@ class CSISensingDataset(Dataset):
     def __len__(self):
         return len(self.file_list)
 
-
-train_set = CSISensingDataset(Path('../../datasets/NTU-Fi_HAR/Train'))
-train_set[0]
