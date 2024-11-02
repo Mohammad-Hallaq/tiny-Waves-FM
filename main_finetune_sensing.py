@@ -25,7 +25,8 @@ import util.lr_decay as lrd
 import util.misc as misc
 from util.misc import NativeScalerWithGradNormCount as NativeScaler
 from timm.layers import trunc_normal_
-from timm.loss import LabelSmoothingCrossEntropy
+from timm.loss import LabelSmoothingCrossEntropy, SoftTargetCrossEntropy
+from timm.data.mixup import Mixup
 
 import models_vit
 
@@ -201,17 +202,18 @@ def main(args):
         drop_last=False
     )
 
-    # mixup_fn = None
-    # mixup_active = args.mixup > 0 or args.cutmix > 0. or args.cutmix_minmax is not None
-    # if mixup_active:
-    #     print("Mixup is activated!")
-    #     mixup_fn = Mixup(
-    #         mixup_alpha=args.mixup, cutmix_alpha=args.cutmix, cutmix_minmax=args.cutmix_minmax,
-    #         prob=args.mixup_prob, switch_prob=args.mixup_switch_prob, mode=args.mixup_mode,
-    #         label_smoothing=args.smoothing, num_classes=args.nb_classes)
-    
-    model = models_vit.__dict__[args.model](global_pool=args.global_pool, num_classes=args.nb_classes)
+    mixup_active = args.mixup > 0 or args.cutmix > 0. or args.cutmix_minmax is not None
+    if mixup_active:
+        print("Mixup is activated!")
+        mixup_fn = Mixup(
+            mixup_alpha=args.mixup, cutmix_alpha=args.cutmix, cutmix_minmax=args.cutmix_minmax,
+            prob=args.mixup_prob, switch_prob=args.mixup_switch_prob, mode=args.mixup_mode,
+            label_smoothing=args.smoothing, num_classes=args.nb_classes)
+    else:
+        mixup_fn = None
 
+    model = models_vit.__dict__[args.model](global_pool=args.global_pool, num_classes=args.nb_classes,
+                                            drop_path_rate=args.drop_path)
 
     if args.finetune and not args.eval:
         checkpoint = torch.load(args.finetune, map_location='cpu')
@@ -228,12 +230,6 @@ def main(args):
         # load pre-trained model
         msg = model.load_state_dict(checkpoint_model, strict=False)
         print(msg)
-
-        # if args.global_pool == 'avg':
-        #     assert set(msg.missing_keys) == {'head.weight', 'head.bias', 'fc_norm.weight', 'fc_norm.bias'}
-        # elif args.global_pool == 'token':
-        #     assert set(msg.missing_keys) == {'head.weight', 'head.bias'}
-
         # manually initialize fc layer
         trunc_normal_(model.head.weight, std=2e-5)
 
@@ -266,10 +262,10 @@ def main(args):
     optimizer = torch.optim.AdamW(param_groups, lr=args.lr)
     loss_scaler = NativeScaler()
 
-    # if mixup_fn is not None:
-    #     # smoothing is handled with mixup label transform
-    #     criterion = SoftTargetCrossEntropy()
-    if args.smoothing > 0.:
+    if mixup_fn is not None:
+        # smoothing is handled with mixup label transform
+        criterion = SoftTargetCrossEntropy()
+    elif args.smoothing > 0.:
         criterion = LabelSmoothingCrossEntropy(smoothing=args.smoothing)
     else:
         criterion = torch.nn.CrossEntropyLoss()
@@ -292,7 +288,7 @@ def main(args):
         train_stats = train_one_epoch(
             model, criterion, data_loader_train,
             optimizer, device, epoch, loss_scaler,
-            args.clip_grad, None,
+            args.clip_grad, mixup_fn,
             log_writer=log_writer,
             args=args
         )
