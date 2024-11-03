@@ -144,6 +144,7 @@ def get_args_parser():
     parser.add_argument('--dist_on_itp', action='store_true')
     parser.add_argument('--dist_url', default='env://',
                         help='url used to set up distributed training')
+    parser.add_argument('--downsampled', action='store_true', default=False)
 
     return parser
 
@@ -163,13 +164,8 @@ def main(args):
 
     cudnn.benchmark = True
 
-    augment_transforms = transforms.Compose([
-        transforms.RandomResizedCrop((224, 224), scale=(0.85, 1.0), interpolation=transforms.InterpolationMode.BICUBIC),
-        transforms.RandomHorizontalFlip(),
-        transforms.ColorJitter(brightness=(0.9, 1.1), contrast=(0.9, 1.1))
-    ])
-    dataset_train = CSISensingDataset(Path('../datasets/NTU-Fi_HAR/train'), augment_transforms=augment_transforms)
-    dataset_val = CSISensingDataset(Path('../datasets/NTU-Fi_HAR/test'))
+    dataset_train = CSISensingDataset(Path('../datasets/NTU-Fi_HAR/train'), downsampled=args.downsampled)
+    dataset_val = CSISensingDataset(Path('../datasets/NTU-Fi_HAR/test'), downsampled=args.downsampled)
 
     num_tasks = misc.get_world_size()
     global_rank = misc.get_rank()

@@ -10,11 +10,12 @@ import numpy as np
 
 
 class CSISensingDataset(Dataset):
-    def __init__(self, root_dir, img_size=(224, 224), augment_transforms=None):
+    def __init__(self, root_dir, img_size=(224, 224), augment_transforms=None, downsampled=False):
         self.root_dir = root_dir
         self.file_list = os.listdir(Path(root_dir))
         self.img_size = img_size
         self.labels = ['run', 'walk', 'fall', 'box', 'circle', 'clean']
+        self.downsampled = downsampled
         self.min_val, self.max_val, self.mu, self.std = self.compute_stats()
         self.transforms = Compose([Lambda(lambda x: torch.as_tensor(x, dtype=torch.float32)),
                                    Resize(self.img_size, antialias=True, interpolation=InterpolationMode.BICUBIC),
@@ -29,6 +30,8 @@ class CSISensingDataset(Dataset):
         min_val, max_val = np.inf, -np.inf
         for sample_name in self.file_list:
             csi = loadmat(os.path.join(self.root_dir, sample_name))['CSIamp'].reshape(3, 114, -1)
+            if self.downsampled:
+                csi = csi[:, :, ::4]
             csi = transforms(csi)
             min_val = min(min_val, torch.min(csi).item())
             max_val = max(max_val, torch.max(csi).item())
@@ -36,6 +39,8 @@ class CSISensingDataset(Dataset):
         mu, std = torch.zeros((3,)), torch.zeros((3,))
         for sample_name in self.file_list:
             csi = loadmat(os.path.join(self.root_dir, sample_name))['CSIamp'].reshape(3, 114, -1)
+            if self.downsampled:
+                csi = csi[:, :, ::4]
             csi = transforms(csi)
             csi = (csi - min_val) / (max_val - min_val)
             mu += torch.mean(csi, dim=(1, 2))
@@ -57,6 +62,8 @@ class CSISensingDataset(Dataset):
         sample_name = self.file_list[index]
         csi = loadmat(os.path.join(self.root_dir, sample_name))['CSIamp']
         csi = csi.reshape(3, 114, -1)
+        if self.downsampled:
+            csi = csi[:, :, ::4]
         label_name = self._split_at_number(sample_name)
         label_index = self.labels.index(label_name)
         if self.augment_transforms:
@@ -68,5 +75,3 @@ class CSISensingDataset(Dataset):
     def __len__(self):
         return len(self.file_list)
 
-
-dataset = CSISensingDataset(Path('../../datasets/NTU-Fi_HAR/train'))
