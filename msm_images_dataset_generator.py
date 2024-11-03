@@ -10,7 +10,7 @@ from PIL import Image
 from pathlib import Path
 
 
-def main(recordings_filepath_list, sentence_duration, mfft=1024, overlap=None, hop=None):
+def main(recordings_filepath_list, sentence_duration, mfft, overlap=None, hop=None):
     # dsp params
     if overlap is None:
         overlap = mfft // 2
