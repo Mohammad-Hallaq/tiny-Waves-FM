@@ -14,7 +14,7 @@ import numpy as np
 
 
 def main(args):
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    device = args.device
     ckpt_dir = Path(args.ckpt_dir)
     data_dir = Path(args.data_dir)
     mask_ratios = args.mask_ratios
@@ -130,6 +130,7 @@ if __name__ == "__main__":
                         help='Path to save the accuracy plot')
     parser.add_argument('--output_accuracy', type=str, default='accuracies.npy',
                         help='Path to save the accuracy array as a .npy file')
+    parser.add_argument('--device', type=str, default='cuda' if torch.cuda.is_available() else 'cpu')
 
     args = parser.parse_args()
     main(args)
