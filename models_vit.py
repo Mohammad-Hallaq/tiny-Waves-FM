@@ -28,7 +28,7 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
         for param in self.blocks.parameters():
             param.requires_grad = False
 
-        for param in self.patch_embed.proj.parameter():
+        for param in self.patch_embed.proj.parameters():
             param.requires_grad = False
 
 
