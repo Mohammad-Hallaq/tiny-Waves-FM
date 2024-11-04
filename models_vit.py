@@ -34,20 +34,20 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
 
 def vit_small_patch16(**kwargs):
     model = VisionTransformer(
-        patch_size=16, embed_dim=512, in_chans=1, depth=12, num_heads=8, mlp_ratio=4, qkv_bias=True,
+        patch_size=16, embed_dim=512, depth=12, num_heads=8, mlp_ratio=4, qkv_bias=True,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     return model
 
 
 def vit_medium_patch16(**kwargs):
     model = VisionTransformer(
-        patch_size=16, embed_dim=768, in_chans=1, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
+        patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     return model
 
 
 def vit_large_patch16(**kwargs):
     model = VisionTransformer(
-        patch_size=16, embed_dim=1024, in_chans=1, depth=24, num_heads=16, mlp_ratio=4, qkv_bias=True,
+        patch_size=16, embed_dim=1024, depth=24, num_heads=16, mlp_ratio=4, qkv_bias=True,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     return model
