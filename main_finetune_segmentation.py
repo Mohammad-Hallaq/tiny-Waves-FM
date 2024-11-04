@@ -21,6 +21,8 @@ import torch
 import torch.backends.cudnn as cudnn
 from torch.utils.tensorboard import SummaryWriter
 
+from timm.loss import LabelSmoothingCrossEntropy
+
 import util.lr_decay as lrd
 import util.misc as misc
 from util.misc import NativeScalerWithGradNormCount as NativeScaler
@@ -260,13 +262,10 @@ def main(args):
     optimizer = torch.optim.AdamW(param_groups, lr=args.lr)
     loss_scaler = NativeScaler()
 
-    # if mixup_fn is not None:
-    #     # smoothing is handled with mixup label transform
-    #     criterion = SoftTargetCrossEntropy()
-    # elif args.smoothing > 0.:
-    #     criterion = LabelSmoothingCrossEntropy(smoothing=args.smoothing)
-    # else:
-    criterion = torch.nn.CrossEntropyLoss()
+    if args.smoothing > 0.:
+        criterion = LabelSmoothingCrossEntropy(smoothing=args.smoothing)
+    else:
+        criterion = torch.nn.CrossEntropyLoss()
 
     print("criterion = %s" % str(criterion))
 
