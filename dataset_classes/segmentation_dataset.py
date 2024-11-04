@@ -2,6 +2,7 @@ import numpy as np
 from torch.utils.data import Dataset
 from torchvision.transforms.transforms import Compose, Lambda, Resize
 import torchvision.transforms.v2.functional as F
+from torchvision import transforms
 import torch
 from scipy.io import loadmat
 import os
@@ -40,7 +41,8 @@ class SegmentationDataset(Dataset):
         # tokenize features
         features = self.transform(features)
         _, h, w = features.shape
-        labels = F.resize(torch.as_tensor(labels, dtype=torch.long).reshape((1, 256, 256)),(h, w))
+        labels = F.resize(torch.as_tensor(labels, dtype=torch.long).reshape((1, 256, 256)),(h, w), antialias=True,
+                          interpolation=transforms.InterpolationMode.BICUBIC)
         return features, labels
 
     def __len__(self):
