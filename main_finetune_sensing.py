@@ -20,7 +20,6 @@ from pathlib import Path
 import torch
 import torch.backends.cudnn as cudnn
 from torch.utils.tensorboard import SummaryWriter
-from torchvision import transforms
 
 import util.lr_decay as lrd
 import util.misc as misc
@@ -112,7 +111,7 @@ def get_args_parser():
     # Dataset parameters
     parser.add_argument('--data_path', default='', type=str,
                         help='dataset path')
-    parser.add_argument('--nb_classes', default=3, type=int,
+    parser.add_argument('--nb_classes', default=6, type=int,
                         help='number of the classification types')
 
     parser.add_argument('--output_dir', default='./output_dir',
