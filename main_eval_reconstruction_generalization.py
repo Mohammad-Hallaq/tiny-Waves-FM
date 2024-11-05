@@ -20,7 +20,7 @@ def main(args):
     mask_ratios = args.mask_ratios
     model_key = 'mae_vit_small_patch16'
     ckpt_names = ["pretrained_small_%d.pth" % i for i in mask_ratios]
-    labels = ['ViT-S', 'ViT-M', 'ViT-L']
+    labels = ["ViT-S%d" % i for i in mask_ratios]
     kernel_size = args.kernel_size
     batch_size = args.batch_size
     num_workers = args.num_workers
@@ -99,10 +99,8 @@ def main(args):
     plt.rcParams['font.family'] = 'serif'
     plt.rcParams['font.size'] = 14
     plt.figure(figsize=(10, 6))
-    markers = ['o', 's', '^']  # Different markers for each model
-    colors = ['r', 'b', 'm']
     for i in range(len(ckpt_names)):
-        plt.plot(mask_ratios, accuracies[i].cpu().numpy(), color=colors[i], marker=markers[i], label=labels[i],
+        plt.plot(mask_ratios, accuracies[i].cpu().numpy(), marker='o', label=labels[i],
                  linewidth=2)
 
     plt.xlabel('Mask Ratio (%)', fontsize=14)
