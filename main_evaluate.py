@@ -90,7 +90,6 @@ def main(args):
                     accuracies[i, j] += (pooled_images == pooled_reconstructed).sum().item()
 
     accuracies /= (len(test_set) * (224 // kernel_size) ** 2)
-    print("Accuracies:", accuracies)
 
     # Save the accuracy array
     np.save(args.output_accuracy, accuracies.cpu().numpy())
