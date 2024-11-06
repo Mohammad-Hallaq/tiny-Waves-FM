@@ -21,6 +21,7 @@ def main(args):
     models = [("mae_vit_small_patch16", "pretrained_small_%d.pth"),
               ("mae_vit_medium_patch16", "pretrained_medium_%d.pth"),
               ("mae_vit_large_patch16", "pretrained_large_%d.pth")]
+    labels = ['ViT-S', 'ViT-M', 'ViT-L']
     kernel_size = args.kernel_size
     batch_size = args.batch_size
     num_workers = args.num_workers
@@ -66,6 +67,7 @@ def main(args):
 
                     if args.plot and k % 10 == 0:
                         fig, axs = plt.subplots(1, 3, figsize=(12, 4))
+                        fig.suptitle(labels[i], fontsize=16)
                         axs[0].imshow(images[0, :, :, 0].detach().cpu().numpy())
                         axs[0].axis('off')
                         axs[0].set_title('Original')
@@ -77,7 +79,8 @@ def main(args):
                         axs[2].set_title('Reconstructed + Visible')
                         plt.tight_layout()
                         plt.show()
-                        fig, axs = plt.subplots(1, 2)
+                        fig, axs = plt.subplots(1, 2, figsize=(8, 4))
+                        fig.suptitle(labels[i], fontsize=16)
                         axs[0].imshow(pooled_images[0, 0].detach().cpu().numpy())
                         axs[0].axis('off')
                         axs[0].set_title('Original Grid')
@@ -100,7 +103,6 @@ def main(args):
     plt.figure(figsize=(10, 6))
     markers = ['o', 's', '^']  # Different markers for each model
     colors = ['r', 'b', 'm']
-    labels = ['ViT-S', 'ViT-M', 'ViT-L']
     for i in range(len(models)):
         plt.plot(mask_ratios, accuracies[i].cpu().numpy(), color=colors[i], marker=markers[i], label=labels[i],
                  linewidth=2)

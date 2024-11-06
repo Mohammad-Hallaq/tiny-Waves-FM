@@ -178,7 +178,7 @@ class SegmentationViT(nn.Module):
 def seg_vit_small_patch16_dec512d8b(**kwargs):
     model = SegmentationViT(
         patch_size=16, embed_dim=512, in_chans=1, depth=12, num_heads=8,
-        decoder_embed_dim=256, decoder_depth=8, decoder_num_heads=16,
+        decoder_embed_dim=256, decoder_depth=2, decoder_num_heads=16,
         mlp_ratio=4, norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     return model
 
@@ -186,7 +186,7 @@ def seg_vit_small_patch16_dec512d8b(**kwargs):
 def seg_vit_medium_patch16_dec512d8b(**kwargs):
     model = SegmentationViT(
         patch_size=16, embed_dim=768, in_chans=1, depth=12, num_heads=12,
-        decoder_embed_dim=512, decoder_depth=8, decoder_num_heads=16,
+        decoder_embed_dim=512, decoder_depth=2, decoder_num_heads=16,
         mlp_ratio=4, norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     return model
 
@@ -194,7 +194,7 @@ def seg_vit_medium_patch16_dec512d8b(**kwargs):
 def seg_vit_large_patch16_dec512d8b(**kwargs):
     model = SegmentationViT(
         patch_size=16, embed_dim=1024, in_chans=1, depth=24, num_heads=16,
-        decoder_embed_dim=512, decoder_depth=8, decoder_num_heads=16,
+        decoder_embed_dim=512, decoder_depth=2, decoder_num_heads=16,
         mlp_ratio=4, norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     return model
 

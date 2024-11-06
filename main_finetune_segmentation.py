@@ -159,8 +159,8 @@ def main(args):
     np.random.seed(seed)
 
     cudnn.benchmark = True
-    dataset_train = SegmentationDataset(dataset_dir=Path('../QoherentLnC_V2/SegmentationData/Train/LTE_NR'))
-    dataset_val = SegmentationDataset(dataset_dir=Path('../QoherentLnC_V2/SegmentationData/Test/LTE_NR'))
+    dataset_train = SegmentationDataset(dataset_dir=Path('../datasets/SegmentationData/Train/LTE_NR'))
+    dataset_val = SegmentationDataset(dataset_dir=Path('../datasets/SegmentationData/Test/LTE_NR'))
 
 
     # if True:  # args.distributed:
