@@ -69,29 +69,42 @@ def main(args):
         conf_matrices[i] = conf_matrices[i] / row_sums.astype(float)
 
     class_labels = test_set.labels
-    print(class_labels)
     titles = ['ViT-S70', 'ViT-S75', 'ViT-S80',
               'ViT-M70', 'ViT-M75', 'ViT-M80',
               'ViT-L70', 'ViT-L75', 'ViT-L80']
 
     plt.rcParams['font.family'] = 'serif'
 
-    fig, axs = plt.subplots(nrows=3, ncols=3, figsize=(12, 12))
-    for i, ax in enumerate(axs.flatten()):
+    # Define a custom gridspec for the subplots
+    fig = plt.figure(figsize=(14, 12))  # Increase figure width
+    gs = fig.add_gridspec(3, 3, width_ratios=[1, 1, 0.1])  # Adjust the width ratio of the last column
+
+    # Create subplots based on the gridspec
+    axs = [fig.add_subplot(gs[i, j]) for i in range(3) for j in range(3)]
+
+    for i, ax in enumerate(axs):
         if (i + 1) % 3 == 0:
             sns.heatmap(conf_matrices[i], annot=True, fmt='.2f', cmap='Reds',
                         xticklabels=class_labels, yticklabels=class_labels, ax=ax,
-                        annot_kws={'size': 10})  # Adjust annotation font size here
+                        annot_kws={'size': 10})  # Add colorbar here
         else:
             sns.heatmap(conf_matrices[i], annot=True, fmt='.2f', cmap='Reds',
                         xticklabels=class_labels, yticklabels=class_labels, ax=ax,
-                        annot_kws={'size': 10}, cbar=False)  # Adjust annotation font size here
+                        annot_kws={'size': 10}, cbar=False)  # No colorbar for other subplots
         ax.set_title(titles[i], fontsize=16)
         ax.tick_params(axis='both', labelsize=10)
-    axs[1, 0].set_ylabel('True label', fontsize=16)
-    axs[2, 1].set_xlabel('Predicted label', fontsize=16)
+
+    # Adjust axis labels for the second row, first column (index 3) and third row, second column (index 7)
+    axs[3].set_ylabel('True label', fontsize=16)
+    axs[7].set_xlabel('Predicted label', fontsize=16)
+
+    # Adjust layout to avoid overlap
     plt.tight_layout()
+
+    # Save the plot
     plt.savefig(args.output_plot, dpi=400)
+
+    # Show the plot
     plt.show()
 
 
