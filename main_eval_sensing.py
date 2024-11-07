@@ -74,7 +74,7 @@ def main(args):
               'ViT-L70', 'ViT-L75', 'ViT-L80']
     plt.rcParams['font.family'] = 'serif'
     plt.rcParams['font.size'] = 16
-    fig, axs = plt.subplots(nrows=3, ncols=3, fig_size=(12, 12))
+    fig, axs = plt.subplots(nrows=3, ncols=3, figsize=(12, 12))
     for i, ax in enumerate(axs.flatten()):
         sns.heatmap(conf_matrices[i], annot=True, fmt='.2f', cmap='Reds',
                     xticklabels=class_labels, yticklabels=class_labels, ax=ax)
