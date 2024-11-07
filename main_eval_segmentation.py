@@ -3,10 +3,10 @@ from pathlib import Path
 import os
 
 import torch
-from dataset_classes.csi_sensing import CSISensingDataset
+from dataset_classes.segmentation_dataset import SegmentationDataset
 from sklearn.metrics import confusion_matrix
 from torch.utils.data import DataLoader
-import models_vit
+import models_segmentation
 import matplotlib.pyplot as plt
 import seaborn as sns
 from tqdm import tqdm
@@ -17,29 +17,22 @@ def main(args):
     device = args.device
     ckpt_dir = Path(args.ckpt_dir)
     data_dir = Path(args.data_dir)
-    models = [("vit_small_patch16", "sensing_small_70.pth"), ("vit_small_patch16", "sensing_small_75.pth"), ("vit_small_patch16", "sensing_small_80.pth"),
-              ("vit_medium_patch16", "sensing_medium_70.pth"), ("vit_medium_patch16", "sensing_medium_75.pth"), ("vit_medium_patch16", "sensing_medium_80.pth"),
-              ("vit_large_patch16", "sensing_large_70.pth"), ("vit_large_patch16", "sensing_large_75.pth"), ("vit_large_patch16", "sensing_large_80.pth")]
+    models = [("seg_vit_small_patch16", "segm_small_70.pth"), ("seg_vit_small_patch16", "segm_small_75.pth"), ("seg_vit_small_patch16", "segm_small_80.pth"),
+              ("seg_vit_medium_patch16", "segm_medium_70.pth"), ("seg_vit_medium_patch16", "segm_medium_75.pth"), ("seg_vit_medium_patch16", "segm_medium_80.pth"),
+              ("seg_vit_large_patch16", "segm_large_70.pth"), ("seg_vit_large_patch16", "segm_large_75.pth"), ("seg_vit_large_patch16", "segm_large_80.pth")]
 
     batch_size = args.batch_size
     num_workers = args.num_workers
 
-    test_set = CSISensingDataset(data_dir)
+    test_set = SegmentationDataset(data_dir)
     test_loader = DataLoader(test_set, batch_size=batch_size, num_workers=num_workers, shuffle=True)
     accuracies = np.zeros((len(models),))
-    conf_matrices = np.zeros((len(models), 6, 6))
+    conf_matrices = np.zeros((len(models), 3, 3))
     with torch.no_grad():
         for i, (model_key, model_name) in enumerate(tqdm(models, desc="Models")):
             ckpt_path = os.path.join(ckpt_dir, model_name)
             ckpt = torch.load(ckpt_path, map_location=device)['model']
-            model = getattr(models_vit, model_key)(global_pool='token', num_classes=6)
-            state_dict = model.state_dict()
-            for k in ['head.weight', 'head.bias', 'pos_embed']:
-                if k in ckpt and ckpt[k].shape != state_dict[k].shape:
-                    print(f"Removing key {k} from pretrained checkpoint")
-                    del ckpt[k]
-            ckpt['patch_embed.proj.weight'] = ckpt['patch_embed.proj.weight'].expand(-1, 3, -1, -1)
-
+            model = getattr(models_segmentation, model_key)()
             model.load_state_dict(ckpt, strict=False)
 
             model = model.to(device)
@@ -50,7 +43,9 @@ def main(args):
                 images = images.to(device)
                 targets = targets.to(device)
                 pred = model(images)
-                pred = torch.argmax(pred, dim=-1)
+                pred = pred.permute(0, 2, 3, 1).reshape(-1, pred.shape[1]).argmax(
+                    dim=-1).detach().cpu().numpy()
+                targets = targets.view(-1).detach().cpu().numpy()
                 all_targets.extend(targets.tolist())
                 all_preds.extend(pred.tolist())
             all_targets = np.array(all_targets)
@@ -68,7 +63,7 @@ def main(args):
         row_sums[row_sums == 0] = 1
         conf_matrices[i] = conf_matrices[i] / row_sums.astype(float)
 
-    class_labels = test_set.labels
+    class_labels = ['Noise', 'NR', 'LTE']
     titles = ['ViT-S70', 'ViT-S75', 'ViT-S80',
               'ViT-M70', 'ViT-M75', 'ViT-M80',
               'ViT-L70', 'ViT-L75', 'ViT-L80']
@@ -111,15 +106,15 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Evaluate ViT models on CSI sensing dataset with varying mask ratios.")
     parser.add_argument('--ckpt_dir', type=str, default='checkpoints', help='Directory for model checkpoints')
-    parser.add_argument('--data_dir', type=str, default='../datasets/NTU-Fi_HAR/test',
+    parser.add_argument('--data_dir', type=str, default='../datasets/SegmentationData/test/LTE_NR',
                         help='Path to CSI Sensing dataset directory')
     parser.add_argument('--batch_size', type=int, default=16, help='Batch size for DataLoader')
     parser.add_argument('--num_workers', type=int, default=0, help='Number of workers for DataLoader')
-    parser.add_argument('--output_plot', type=str, default='fig_conf_matrices_sensing.png',
+    parser.add_argument('--output_plot', type=str, default='fig_conf_matrices_segm.png',
                         help='Path to save the accuracy plot')
-    parser.add_argument('--output_accuracy', type=str, default='accuracies_sensing.npy',
+    parser.add_argument('--output_accuracy', type=str, default='accuracies_segm.npy',
                         help='Path to save the accuracy array as a .npy file')
-    parser.add_argument('--output_conf_mats', type=str, default='conf_mats_sensing.npy',
+    parser.add_argument('--output_conf_mats', type=str, default='conf_mats_segm.npy',
                         help='Path to save the accuracy array as a .npy file')
     parser.add_argument('--device', type=str, default='cuda' if torch.cuda.is_available() else 'cpu')
 
