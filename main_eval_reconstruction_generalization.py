@@ -20,7 +20,7 @@ def main(args):
     mask_ratios = args.mask_ratios
     model_key = 'mae_vit_small_patch16'
     ckpt_names = ["pretrained_small_%d.pth" % i for i in [20, 40, 60, 70, 80, 90]]
-    labels = ["ViT-S%d" % i for i in [20, 40, 60, 70, 80, 90]]
+    labels = ['20%', '40%', '60%', '70%', '80%', '90%']
     kernel_size = args.kernel_size
     batch_size = args.batch_size
     num_workers = args.num_workers
@@ -104,10 +104,9 @@ def main(args):
         plt.plot(mask_ratios, accuracies[i].cpu().numpy(), marker=markers[i], label=labels[i],
                  linewidth=2)
 
-    plt.xlabel('Mask Ratio (%)', fontsize=14)
-    plt.ylabel('Accuracy', fontsize=14)
-    # plt.title('Accuracy vs Mask Ratio for Different Models')
-    plt.legend(fontsize=14)
+    plt.xlabel('Mask Ratio (%)', fontsize=16)
+    plt.ylabel('Reconstruction Accuracy', fontsize=16)
+    plt.legend(fontsize=14, title='Pretraining Mask Ratios')
     plt.grid(True)
     plt.savefig(args.output_plot, dpi=800, bbox_inches='tight')
     print("Accuracies:", accuracies)
@@ -118,7 +117,7 @@ if __name__ == "__main__":
     parser.add_argument('--ckpt_dir', type=str, default='checkpoints', help='Directory for model checkpoints')
     parser.add_argument('--data_dir', type=str, default='../datasets/spectrogram_dataset/images',
                         help='Path to spectrogram dataset directory')
-    parser.add_argument('--mask_ratios', type=int, nargs='+', default=[20, 30, 40, 50, 60, 65, 70, 75, 80, 85],
+    parser.add_argument('--mask_ratios', type=int, nargs='+', default=[20, 30, 40, 50, 60, 65, 70, 75, 80, 85, 90],
                         help='List of mask ratios to test')
     parser.add_argument('--kernel_size', type=int, default=3, help='Kernel size for pooling')
     parser.add_argument('--batch_size', type=int, default=16, help='Batch size for DataLoader')
