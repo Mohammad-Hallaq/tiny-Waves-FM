@@ -88,8 +88,8 @@ def main(args):
                         annot_kws={'size': 10}, cbar=False)  # Adjust annotation font size here
         ax.set_title(titles[i], fontsize=16)
         ax.tick_params(axis='both', labelsize=10)
-    axs[1, 0].set_xlabel('True label', fontsize=16)
-    axs[2, 1].set_ylabel('Predicted label', fontsize=16)
+    axs[1, 0].set_ylabel('True label', fontsize=16)
+    axs[2, 1].set_xlabel('Predicted label', fontsize=16)
     plt.tight_layout()
     plt.savefig(args.output_plot, dpi=400)
     plt.show()
