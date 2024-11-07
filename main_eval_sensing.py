@@ -61,7 +61,7 @@ def main(args):
     accuracies /= len(test_set)
 
     # Save the accuracy array
-    np.save('conf_matrices_sensing.npy', conf_matrices)
+    np.save(args.output_conf_mats, conf_matrices)
     np.save(args.output_accuracy, accuracies)
     for i in range(6):
         row_sums = np.sum(conf_matrices[i], axis=1)
@@ -77,12 +77,12 @@ def main(args):
     fig, axs = plt.subplots(nrows=3, ncols=3, fig_size=(12, 12))
     for i, ax in enumerate(axs.flatten()):
         sns.heatmap(conf_matrices[i], annot=True, fmt='.2f', cmap='Reds',
-                    xticklabels=class_labels, yticklabels=class_labels)
+                    xticklabels=class_labels, yticklabels=class_labels, ax=ax)
         ax.set_xlabel('Predicted label', fontsize=16)
         ax.set_ylabel('True label', fontsize=16)
         ax.set_title(titles[i], fontsize=16)
         ax.axis('off')
-    plt.savefig('fig_conf_matrices_sensing.png', dpi=400)
+    plt.savefig(args.output_plot, dpi=400)
     plt.show()
 
 
@@ -93,9 +93,11 @@ if __name__ == "__main__":
                         help='Path to CSI Sensing dataset directory')
     parser.add_argument('--batch_size', type=int, default=16, help='Batch size for DataLoader')
     parser.add_argument('--num_workers', type=int, default=0, help='Number of workers for DataLoader')
-    parser.add_argument('--output_plot', type=str, default='accuracy_vs_mask_ratio_sensing.png',
+    parser.add_argument('--output_plot', type=str, default='fig_conf_matrices_sensing.png',
                         help='Path to save the accuracy plot')
     parser.add_argument('--output_accuracy', type=str, default='accuracies_sensing.npy',
+                        help='Path to save the accuracy array as a .npy file')
+    parser.add_argument('--output_conf_mats', type=str, default='conf_mats_sensing.npy',
                         help='Path to save the accuracy array as a .npy file')
     parser.add_argument('--device', type=str, default='cuda' if torch.cuda.is_available() else 'cpu')
 
