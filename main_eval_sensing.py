@@ -69,6 +69,7 @@ def main(args):
         conf_matrices[i] = conf_matrices[i] / row_sums.astype(float)
 
     class_labels = test_set.labels
+    print(class_labels)
     titles = ['ViT-S70', 'ViT-S75', 'ViT-S80',
               'ViT-M70', 'ViT-M75', 'ViT-M80',
               'ViT-L70', 'ViT-L75', 'ViT-L80']
@@ -78,13 +79,17 @@ def main(args):
 
     fig, axs = plt.subplots(nrows=3, ncols=3, figsize=(12, 12))
     for i, ax in enumerate(axs.flatten()):
-        sns.heatmap(conf_matrices[i], annot=True, fmt='.2f', cmap='Reds',
-                    xticklabels=class_labels, yticklabels=class_labels, ax=ax,
-                    annot_kws={'size': 10})  # Adjust annotation font size here
+        if i + 1 % 3 == 0:
+            sns.heatmap(conf_matrices[i], annot=True, fmt='.2f', cmap='Reds',
+                        xticklabels=class_labels, yticklabels=class_labels, ax=ax,
+                        annot_kws={'size': 10})  # Adjust annotation font size here
+        else:
+            sns.heatmap(conf_matrices[i], annot=True, fmt='.2f', cmap='Reds',
+                        xticklabels=class_labels, yticklabels=class_labels, ax=ax,
+                        annot_kws={'size': 10}, cbar='off')  # Adjust annotation font size here
         ax.set_xlabel('Predicted label', fontsize=16)
         ax.set_ylabel('True label', fontsize=16)
         ax.set_title(titles[i], fontsize=16)
-        ax.axis('off')
 
     plt.tight_layout()
     plt.savefig(args.output_plot, dpi=400)
