@@ -17,7 +17,7 @@ def main(args):
     device = args.device
     ckpt_dir = Path(args.ckpt_dir)
     data_dir = Path(args.data_dir)
-    mask_ratios = args.mask_ratios
+    mask_ratios = list(args.mask_ratios)
     model_key = 'mae_vit_small_patch16'
     ckpt_names = ["pretrained_small_%d.pth" % i for i in [20, 40, 60, 70, 80, 90]]
     labels = ['20%', '40%', '60%', '70%', '80%', '90%']
@@ -117,7 +117,7 @@ if __name__ == "__main__":
     parser.add_argument('--ckpt_dir', type=str, default='checkpoints', help='Directory for model checkpoints')
     parser.add_argument('--data_dir', type=str, default='../datasets/spectrogram_dataset/images',
                         help='Path to spectrogram dataset directory')
-    parser.add_argument('--mask_ratios', type=int, nargs='+', default=[20, 30, 40, 50, 60, 65, 70, 75, 80, 85, 90],
+    parser.add_argument('--mask_ratios', type=int, nargs='+', default=range(20, 100, 5),
                         help='List of mask ratios to test')
     parser.add_argument('--kernel_size', type=int, default=3, help='Kernel size for pooling')
     parser.add_argument('--batch_size', type=int, default=16, help='Batch size for DataLoader')
