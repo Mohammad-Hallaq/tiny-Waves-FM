@@ -20,7 +20,7 @@ def main(args):
     mask_ratios = args.mask_ratios
     model_key = 'mae_vit_small_patch16'
     ckpt_names = ["pretrained_small_%d.pth" % i for i in [20, 40, 60, 70, 80, 90]]
-    labels = ["ViT-S%d" % i for i in mask_ratios]
+    labels = ["ViT-S%d" % i for i in [20, 40, 60, 70, 80, 90]]
     kernel_size = args.kernel_size
     batch_size = args.batch_size
     num_workers = args.num_workers
