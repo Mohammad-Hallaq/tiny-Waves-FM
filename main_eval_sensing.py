@@ -86,11 +86,10 @@ def main(args):
             sns.heatmap(conf_matrices[i], annot=True, fmt='.2f', cmap='Reds',
                         xticklabels=class_labels, yticklabels=class_labels, ax=ax,
                         annot_kws={'size': 10}, cbar=False)  # Adjust annotation font size here
-        ax.set_xlabel('Predicted label', fontsize=16)
-        ax.set_ylabel('True label', fontsize=16)
         ax.set_title(titles[i], fontsize=16)
         ax.tick_params(axis='both', labelsize=10)
-
+    axs[1, 0].set_xlabel('True label', fontsize=16)
+    axs[2, 1].set_ylabel('Predicted label', fontsize=16)
     plt.tight_layout()
     plt.savefig(args.output_plot, dpi=400)
     plt.show()
