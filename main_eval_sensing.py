@@ -77,7 +77,7 @@ def main(args):
 
     # Define a custom gridspec for the subplots
     fig = plt.figure(figsize=(14, 12))  # Increase figure width
-    gs = fig.add_gridspec(3, 3, width_ratios=[1, 1, 0.1])  # Adjust the width ratio of the last column
+    gs = fig.add_gridspec(3, 3, width_ratios=[1, 1, 1.2])  # Adjust the width ratio of the last column
 
     # Create subplots based on the gridspec
     axs = [fig.add_subplot(gs[i, j]) for i in range(3) for j in range(3)]
