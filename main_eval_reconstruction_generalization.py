@@ -106,7 +106,7 @@ def main(args):
 
     plt.xlabel('Mask Ratio (%)', fontsize=16)
     plt.ylabel('Reconstruction Accuracy', fontsize=16)
-    plt.legend(fontsize=14, title='Pretraining\\Mask Ratios')
+    plt.legend(fontsize=14, title='Pretraining\nMask Ratios')
     plt.grid(True)
     plt.savefig(args.output_plot, dpi=800, bbox_inches='tight')
     print("Accuracies:", accuracies)
