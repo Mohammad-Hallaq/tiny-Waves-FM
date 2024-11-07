@@ -3,11 +3,12 @@ from pathlib import Path
 import os
 
 import torch
-import torch.nn.functional as F
 from dataset_classes.csi_sensing import CSISensingDataset
+from sklearn.metrics import confusion_matrix
 from torch.utils.data import DataLoader
 import models_vit
 import matplotlib.pyplot as plt
+import seaborn as sns
 from tqdm import tqdm
 import numpy as np
 
@@ -16,64 +17,73 @@ def main(args):
     device = args.device
     ckpt_dir = Path(args.ckpt_dir)
     data_dir = Path(args.data_dir)
-    mask_ratios = args.mask_ratios
-    models = [("vit_small_patch16", "finetuned_sensing_small_%d.pth"),]
-              # ("vit_medium_patch16", "finetuned_sensing_medium_%d.pth"),
-              # ("vit_large_patch16", "finetuned_sensing_large_%d.pth")]
+    models = [("vit_small_patch16", "sensing_small_75.pth"), ("vit_small_patch16", "sensing_small_75.pth"), ("vit_small_patch16", "sensing_small_80.pth"),
+              ("vit_medium_patch16", "sensing_medium_70.pth"), ("vit_medium_patch16", "sensing_medium_75.pth"), ("vit_medium_patch16", "sensing_medium_80.pth"),
+              ("vit_large_patch16", "sensing_large_70.pth"), ("vit_large_patch16", "sensing_large_75.pth"), ("vit_large_patch16", "sensing_large_80.pth")]
+
     batch_size = args.batch_size
     num_workers = args.num_workers
 
     test_set = CSISensingDataset(data_dir)
     test_loader = DataLoader(test_set, batch_size=batch_size, num_workers=num_workers, shuffle=True)
-    accuracies = torch.zeros((len(models), len(mask_ratios)), dtype=torch.float).to(device)
-
+    accuracies = np.zeros((len(models),))
+    conf_matrices = np.zeros((len(models), 6, 6))
     with torch.no_grad():
         for i, (model_key, model_name) in enumerate(tqdm(models, desc="Models")):
-            for j, mask_ratio in enumerate(tqdm(mask_ratios, desc=f"Mask Ratios for {model_key}", leave=False)):
-                ckpt_path = os.path.join(ckpt_dir, model_name % mask_ratio)
-                ckpt = torch.load(ckpt_path, map_location=device)['model']
-                model = getattr(models_vit, model_key)(global_pool='token', num_classes=6)
-                state_dict = model.state_dict()
-                for k in ['head.weight', 'head.bias', 'pos_embed']:
-                    if k in ckpt and ckpt[k].shape != state_dict[k].shape:
-                        print(f"Removing key {k} from pretrained checkpoint")
-                        del ckpt[k]
-                ckpt['patch_embed.proj.weight'] = ckpt['patch_embed.proj.weight'].expand(-1, 3, -1, -1)
+            ckpt_path = os.path.join(ckpt_dir, model_name)
+            ckpt = torch.load(ckpt_path, map_location=device)['model']
+            model = getattr(models_vit, model_key)(global_pool='token', num_classes=6)
+            state_dict = model.state_dict()
+            for k in ['head.weight', 'head.bias', 'pos_embed']:
+                if k in ckpt and ckpt[k].shape != state_dict[k].shape:
+                    print(f"Removing key {k} from pretrained checkpoint")
+                    del ckpt[k]
+            ckpt['patch_embed.proj.weight'] = ckpt['patch_embed.proj.weight'].expand(-1, 3, -1, -1)
 
-                model.load_state_dict(ckpt, strict=False)
+            model.load_state_dict(ckpt, strict=False)
 
-                model = model.to(device)
+            model = model.to(device)
 
-                for k, (images, targets) in enumerate(tqdm(test_loader, desc="Batches", leave=False)):
-                    images = images.to(device)
-                    targets = targets.to(device)
-                    pred = model(images)
-                    pred = torch.argmax(pred, dim=-1)
-                    accuracies[i, j] += torch.sum(targets == pred) / len(targets)
+            all_targets = []
+            all_preds = []
+            for k, (images, targets) in enumerate(tqdm(test_loader, desc="Batches", leave=False)):
+                images = images.to(device)
+                targets = targets.to(device)
+                pred = model(images)
+                pred = torch.argmax(pred, dim=-1)
+                all_targets.extend(targets.tolist())
+                all_preds.extend(pred.tolist())
+            all_targets = np.array(all_targets)
+            all_preds = np.array(all_preds)
+            conf_matrices[i] = confusion_matrix(all_targets, all_preds)
+            accuracies[i] = np.sum(all_targets == all_preds) / len(all_targets)
 
-    accuracies /= batch_size
+    accuracies /= len(test_set)
 
     # Save the accuracy array
-    np.save(args.output_accuracy, accuracies.cpu().numpy())
+    np.save('conf_matrices_sensing.npy', conf_matrices)
+    np.save(args.output_accuracy, accuracies)
+    for i in range(6):
+        row_sums = np.sum(conf_matrices[i], axis=1)
+        row_sums[row_sums == 0] = 1
+        conf_matrices[i] = conf_matrices[i] / row_sums.astype(float)
 
-    # Plot accuracy vs mask_ratio for each model
+    class_labels = test_set.labels
+    titles = ['ViT-S70', 'ViT-S75', 'ViT-S80',
+              'ViT-M70', 'ViT-M75', 'ViT-M80',
+              'ViT-L70', 'ViT-L75', 'ViT-L80']
     plt.rcParams['font.family'] = 'serif'
-    plt.rcParams['font.size'] = 14
-    plt.figure(figsize=(10, 6))
-    markers = ['o', 's', '^']  # Different markers for each model
-    colors = ['r', 'b', 'm']
-    labels = ['ViT-S', 'ViT-M', 'ViT-L']
-    for i in range(len(models)):
-        plt.plot(mask_ratios, accuracies[i].cpu().numpy(), color=colors[i], marker=markers[i], label=labels[i],
-                 linewidth=2)
-
-    plt.xlabel('Mask Ratio (%)', fontsize=14)
-    plt.ylabel('Accuracy', fontsize=14)
-    # plt.title('Accuracy vs Mask Ratio for Different Models')
-    plt.legend(fontsize=14)
-    plt.grid(True)
-    plt.savefig(args.output_plot, dpi=800, bbox_inches='tight')
-    print("Accuracies:", accuracies)
+    plt.rcParams['font.size'] = 16
+    fig, axs = plt.subplots(nrows=3, ncols=3, fig_size=(12, 12))
+    for i, ax in enumerate(axs.flatten()):
+        sns.heatmap(conf_matrices[i], annot=True, fmt='.2f', cmap='Reds',
+                    xticklabels=class_labels, yticklabels=class_labels)
+        ax.set_xlabel('Predicted label', fontsize=16)
+        ax.set_ylabel('True label', fontsize=16)
+        ax.set_title(titles[i], fontsize=16)
+        ax.axis('off')
+    plt.savefig('fig_conf_matrices_sensing.png', dpi=400)
+    plt.show()
 
 
 if __name__ == "__main__":
@@ -81,11 +91,8 @@ if __name__ == "__main__":
     parser.add_argument('--ckpt_dir', type=str, default='checkpoints', help='Directory for model checkpoints')
     parser.add_argument('--data_dir', type=str, default='../datasets/NTU-Fi_HAR/test',
                         help='Path to CSI Sensing dataset directory')
-    parser.add_argument('--mask_ratios', type=int, nargs='+', default=[20, 30, 40, 50, 60, 65, 70, 75, 80, 85],
-                        help='List of mask ratios to test')
     parser.add_argument('--batch_size', type=int, default=16, help='Batch size for DataLoader')
     parser.add_argument('--num_workers', type=int, default=0, help='Number of workers for DataLoader')
-    parser.add_argument('--plot', action='store_true', help='Flag to enable plotting of images')
     parser.add_argument('--output_plot', type=str, default='accuracy_vs_mask_ratio_sensing.png',
                         help='Path to save the accuracy plot')
     parser.add_argument('--output_accuracy', type=str, default='accuracies_sensing.npy',
