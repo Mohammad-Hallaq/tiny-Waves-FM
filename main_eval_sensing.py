@@ -63,7 +63,7 @@ def main(args):
     # Save the accuracy array
     np.save(args.output_conf_mats, conf_matrices)
     np.save(args.output_accuracy, accuracies)
-    for i in range(6):
+    for i in range(9):
         row_sums = np.sum(conf_matrices[i], axis=1)
         row_sums[row_sums == 0] = 1
         conf_matrices[i] = conf_matrices[i] / row_sums.astype(float)
