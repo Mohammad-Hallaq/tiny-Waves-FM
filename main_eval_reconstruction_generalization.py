@@ -98,9 +98,10 @@ def main(args):
     # Plot accuracy vs mask_ratio for each model
     plt.rcParams['font.family'] = 'serif'
     plt.rcParams['font.size'] = 14
+    markers = ['o', '*', 's', '^', 'v', 'x', '+']
     plt.figure(figsize=(10, 6))
     for i in range(len(ckpt_names)):
-        plt.plot(mask_ratios, accuracies[i].cpu().numpy(), marker='o', label=labels[i],
+        plt.plot(mask_ratios, accuracies[i].cpu().numpy(), marker=markers[i], label=labels[i],
                  linewidth=2)
 
     plt.xlabel('Mask Ratio (%)', fontsize=14)
