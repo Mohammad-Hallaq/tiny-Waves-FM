@@ -46,11 +46,10 @@ def main(args):
         conf_mat = confusion_matrix(all_targets, all_preds)
         accuracy = np.sum(all_targets == all_preds) / len(all_targets)
 
-    # Save the accuracy array
-    for i in range(9):
-        row_sums = np.sum(conf_mat, axis=1)
-        row_sums[row_sums == 0] = 1
-        conf_mat = conf_mat / row_sums.astype(float)
+
+    row_sums = np.sum(conf_mat, axis=1)
+    row_sums[row_sums == 0] = 1
+    conf_mat = conf_mat / row_sums.astype(float)
 
     print(f"Confusion Matrix: {conf_mat}")
     print(f"Accuracy: {accuracy}")
@@ -75,7 +74,7 @@ def main(args):
 
     # Save the plot
     masking = str(ckpt_path).split('_')[-1].split('.')[0]
-    plt.savefig(Path(f'Figures/conf_mat_{model}_{masking}_segm.png'), dpi=400)
+    plt.savefig(Path(f'Figures/conf_mat_{model_name}_{masking}_segm.png'), dpi=400)
 
     # Show the plot
     plt.show()
