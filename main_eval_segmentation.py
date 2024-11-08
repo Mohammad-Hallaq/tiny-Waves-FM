@@ -53,8 +53,6 @@ def main(args):
             conf_matrices[i] = confusion_matrix(all_targets, all_preds)
             accuracies[i] = np.sum(all_targets == all_preds) / len(all_targets)
 
-    accuracies /= len(test_set)
-
     # Save the accuracy array
     np.save(args.output_conf_mats, conf_matrices)
     np.save(args.output_accuracy, accuracies)
@@ -104,10 +102,10 @@ def main(args):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Evaluate ViT models on CSI sensing dataset with varying mask ratios.")
+    parser = argparse.ArgumentParser(description="Evaluate ViT models on Segmentation dataset with varying mask ratios.")
     parser.add_argument('--ckpt_dir', type=str, default='checkpoints', help='Directory for model checkpoints')
     parser.add_argument('--data_dir', type=str, default='../datasets/SegmentationData/test/LTE_NR',
-                        help='Path to CSI Sensing dataset directory')
+                        help='Path to Segmentation dataset directory')
     parser.add_argument('--batch_size', type=int, default=16, help='Batch size for DataLoader')
     parser.add_argument('--num_workers', type=int, default=0, help='Number of workers for DataLoader')
     parser.add_argument('--output_plot', type=str, default='fig_conf_matrices_segm.png',
