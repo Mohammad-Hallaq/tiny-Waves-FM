@@ -50,7 +50,7 @@ The pretraining instructions are in [PRETRAIN.md](PRETRAIN.md).
 
 Run our interactive visualization demo using [Colab notebook]() (no GPU needed):
 <p align="center">
-  <img src="assets/fig_reconstructed_images.png" width="600">
+  <img src="assets/fig_reconstructed_images.png" width="700">
 </p>
 
 ### Fine-tuning with pre-trained checkpoints
@@ -59,7 +59,7 @@ We finetune the pretrained models on two tasks: Spectrogram Segmentation and CSI
 The task is to segment a spectrogram which includes 5G NR and LTE transmissions in neighboring bands, into three 
 classes: NR, LTE and Noise.
 <p align="center">
-  <img src="assets/fig_spectrogram_label_segmentation.png" width="300">
+  <img src="assets/fig_spectrogram_label_segmentation.png" width="550">
 </p>
 
 Mean accuracy on the segmentation task from finetuning the pretrained models:
@@ -107,7 +107,7 @@ Mean accuracy on the segmentation task from finetuning the pretrained models:
 The task is to identify human activity based on WiFi CSI measurements available at [WiFi-CSI-Sensing-Benchmark](https://github.com/xyanchen/WiFi-CSI-Sensing-Benchmark?tab=readme-ov-file). 
 There are six classes classes: run, walk, fall, box, circle and clean.
 <p align="center">
-  <img src="assets/fig_csi_sensing.png" width="300">
+  <img src="assets/fig_csi_sensing.png" width="550">
 </p>
 
 Mean accuracy on the CSI-based human activity sensing dataset.
