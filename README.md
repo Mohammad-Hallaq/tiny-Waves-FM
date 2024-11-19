@@ -67,16 +67,14 @@ Mean accuracy on the segmentation task from finetuning the pretrained models:
 <table>
 <thead>
 <tr>
-<th></th>
+<th rowspan="2"></th>
 <th colspan="3" align="center">Masking Ratio (%)</th>
-<th>Scratch</th>
+<th rowspan="2">Scratch</th>
 </tr>
 <tr>
-<th></th>
 <th>70%</th>
 <th>75%</th>
 <th>80%</th>
-<th></th>
 </tr>
 </thead>
 <tbody>
@@ -106,6 +104,59 @@ Mean accuracy on the segmentation task from finetuning the pretrained models:
 
 
 ### CSI-based Human Activity Sensing
+The task is to identify human activity based on WiFi CSI measurements available at [WiFi-CSI-Sensing-Benchmark](https://github.com/xyanchen/WiFi-CSI-Sensing-Benchmark?tab=readme-ov-file). 
+There are six classes classes: run, walk, fall, box, circle and clean.
+<p align="center">
+  <img src="assets/fig_csi_sensing.png" width="300">
+</p>
 
+Mean accuracy on the CSI-based human activity sensing dataset.
+<!-- START TABLE -->
+<table>
+<thead>
+<tr>
+<th rowspan="2"></th>
+<th colspan="3" align="center">Masking Ratio (%)</th>
+<th rowspan="2">Scratch</th>
+</tr>
+<tr>
+<th>70%</th>
+<th>75%</th>
+<th>80%</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td align="left">ViT-S</td>
+<td align="center">90.2</td>
+<td align="center">90.9</td>
+<td align="center">89.0</td>
+<td align="center">98.1</td>
+</tr>
+<tr>
+<td align="left">ViT-M</td>
+<td align="center">92.0</td>
+<td align="center"><b>93.9</b></td>
+<td align="center">85.9</td>
+<td align="center"><b>98.9</b></td>
+</tr>
+<tr>
+<td align="left">ViT-L</td>
+<td align="center">89.3</td>
+<td align="center">88.6</td>
+<td align="center">85.6</td>
+<td align="center">98.1</td>
+</tr>
+</tbody>
+</table>
 
-
+The CSI-based human activity sensing dataset was originally published in:
+```
+@article{yang2022efficientfi,
+  title={Efficientfi: Towards large-scale lightweight wifi sensing via csi compression},
+  author={Yang, Jianfei and Chen, Xinyan and Zou, Han and Wang, Dazhuo and Xu, Qianwen and Xie, Lihua},
+  journal={IEEE Internet of Things Journal},
+  year={2022},
+  publisher={IEEE}
+}
+```
