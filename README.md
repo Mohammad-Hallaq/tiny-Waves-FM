@@ -20,16 +20,7 @@ This is a PyTorch implementation of the paper [Building 6G Radio Foundation Mode
 - [x] Pre-trained checkpoints + fine-tuning code
 - [x] Pre-training code
 
-### Visualization demo
-
-Run our interactive visualization demo using [Colab notebook]() (no GPU needed):
-<p align="center">
-  <img src="assets/fig_reconstructed_images.png" width="600">
-</p>
-
-### Fine-tuning with pre-trained checkpoints
-
-The following table provides the pre-trained checkpoints used in the paper, converted from TF/TPU to PT/GPU:
+The following table provides the pre-trained checkpoints at a masking ratio 75%.
 <table><tbody>
 <!-- START TABLE -->
 <!-- TABLE HEADER -->
@@ -50,40 +41,71 @@ The following table provides the pre-trained checkpoints used in the paper, conv
 </tr>
 </tbody></table>
 
-The fine-tuning instruction is in [FINETUNE.md](FINETUNE.md).
+The finetuning instructions are in [FINETUNE.md](FINETUNE.md).
 
-By fine-tuning these pre-trained models, we rank #1 in these classification tasks (detailed in the paper):
-<table><tbody>
+The pretraining instructions are in [PRETRAIN.md](PRETRAIN.md).
+
+
+### Visualization demo
+
+Run our interactive visualization demo using [Colab notebook]() (no GPU needed):
+<p align="center">
+  <img src="assets/fig_reconstructed_images.png" width="600">
+</p>
+
+### Fine-tuning with pre-trained checkpoints
+We finetune the pretrained models on two tasks: Spectrogram Segmentation and CSI-based human activity sensing.
+### Spectrogram Segmentation
+The task is to segment a spectrogram which includes 5G NR and LTE transmissions in neighboring bands, into three 
+classes: NR, LTE and Noise.
+<p align="center">
+  <img src="assets/fig_spectrogram_label_segmentation.png" width="300">
+</p>
+
+Mean accuracy on the segmentation task from finetuning the pretrained models:
 <!-- START TABLE -->
-<!-- TABLE HEADER -->
-<th valign="bottom"></th>
-<th valign="bottom">ViT-S</th>
-<th valign="bottom">ViT-M</th>
-<th valign="bottom">ViT-L</th>
-<th valign="bottom">ViT-H<sub>448</sub></th>
-<td valign="bottom" style="color:#C0C0C0">prev best</td>
-<!-- TABLE BODY -->
-<tr><td align="left">ImageNet-1K (no external data)</td>
-<td align="center">83.6</td>
-<td align="center">85.9</td>
-<td align="center">86.9</td>
-<td align="center"><b>87.8</b></td>
-<td align="center" style="color:#C0C0C0">87.1</td>
+<table>
+<thead>
+<tr>
+<th></th>
+<th colspan="3" align="center">Masking Ratio (%)</th>
+<th>Scratch</th>
 </tr>
-<tr><td align="left">ImageNet-Corruption (error rate) </td>
-<td align="center">51.7</td>
-<td align="center">41.8</td>
-<td align="center"><b>33.8</b></td>
-<td align="center">36.8</td>
-<td align="center" style="color:#C0C0C0">42.5</td>
+<tr>
+<th></th>
+<th>70%</th>
+<th>75%</th>
+<th>80%</th>
+<th></th>
 </tr>
+</thead>
+<tbody>
+<tr>
+<td align="left">ViT-S</td>
+<td align="center">97.0</td>
+<td align="center">96.8</td>
+<td align="center">96.4</td>
+<td align="center">97.2</td>
 </tr>
-</tbody></table>
+<tr>
+<td align="left">ViT-M</td>
+<td align="center"><b>97.9</b></td>
+<td align="center">97.6</td>
+<td align="center">97.5</td>
+<td align="center">97.1</td>
+</tr>
+<tr>
+<td align="left">ViT-L</td>
+<td align="center">97.5</td>
+<td align="center">97.3</td>
+<td align="center">97.5</td>
+<td align="center"><b>97.7</b></td>
+</tr>
+</tbody>
+</table>
 
-### Pre-training
 
-The pre-training instruction is in [PRETRAIN.md](PRETRAIN.md).
+### CSI-based Human Activity Sensing
 
-### License
 
-This project is under the CC-BY-NC 4.0 license. See [LICENSE](LICENSE) for details.
+
