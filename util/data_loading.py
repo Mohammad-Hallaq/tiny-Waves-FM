@@ -21,7 +21,7 @@ def arr_to_complex(arr: np.ndarray) -> np.ndarray:
     return arr[0, :] + 1j * arr[1, :]
 
 
-def read_iqdata(file_path: str) -> tuple:
+def read_iqdata(file_path) -> tuple:
     """
     Reads IQ data from a .npy file and returns the complex-valued signal, recording metadata, and extended metadata.
 

@@ -58,8 +58,6 @@ def main(args):
             conf_matrices[i] = confusion_matrix(all_targets, all_preds)
             accuracies[i] = np.sum(all_targets == all_preds) / len(all_targets)
 
-    accuracies /= len(test_set)
-
     # Save the accuracy array
     np.save(args.output_conf_mats, conf_matrices)
     np.save(args.output_accuracy, accuracies)
