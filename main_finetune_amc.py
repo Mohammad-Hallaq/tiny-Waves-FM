@@ -143,7 +143,7 @@ def get_args_parser():
     parser.add_argument('--dist_on_itp', action='store_true')
     parser.add_argument('--dist_url', default='env://',
                         help='url used to set up distributed training')
-    parser.add_argument('--downsampled', action='store_true', default=False)
+    parser.add_argument('--frozen_layers', type=int, default=None)
 
     return parser
 
@@ -238,7 +238,7 @@ def main(args):
         # manually initialize fc layer
         trunc_normal_(model.head.weight, std=2e-5)
 
-    model.freeze_encoder(10)
+    model.freeze_encoder(args.frozen_layer)
     model.to(device)
 
     model_without_ddp = model
