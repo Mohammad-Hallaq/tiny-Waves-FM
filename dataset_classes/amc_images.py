@@ -17,7 +17,10 @@ class AMCImages(Dataset):
         self.label_mapping.update({
             '16QAM': self.label_mapping['QAM16'],
             '64QAM': self.label_mapping['QAM64'],
-            '4PAM': self.label_mapping['PAM4']
+            '4PAM': self.label_mapping['PAM4'],
+            'B-FM': self.label_mapping['WBFM'],
+            'DSB-AM': self.label_mapping['AM-DSB'],
+            'SSB-AM': self.label_mapping['SSB-AM'],
         })
         self.get_snr = get_snr
 
