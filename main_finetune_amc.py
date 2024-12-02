@@ -164,7 +164,7 @@ def main(args):
     cudnn.benchmark = True
 
     torch.manual_seed(42)
-    dataset = AMCImages(Path('../datasets/amc_rml16'))
+    dataset = AMCImages(Path('../datasets/amc_synthetic'))
 
     train_size = int(0.7 * len(dataset))
     test_size = len(dataset) - train_size
@@ -238,7 +238,11 @@ def main(args):
         # manually initialize fc layer
         trunc_normal_(model.head.weight, std=2e-5)
 
-    model.freeze_encoder(args.frozen_layer)
+    if not args.frozen_layers:
+        print('Freezing the full backbone.')
+    else:
+        print(f'Freezing {args.frozen_layers} layers.')
+    model.freeze_encoder(args.frozen_layers)
     model.to(device)
 
     model_without_ddp = model
