@@ -20,7 +20,7 @@ class AMCImages(Dataset):
             '4PAM': self.label_mapping['PAM4'],
             'B-FM': self.label_mapping['WBFM'],
             'DSB-AM': self.label_mapping['AM-DSB'],
-            'SSB-AM': self.label_mapping['SSB-AM'],
+            'SSB-AM': self.label_mapping['AM-SSB'],
         })
         self.get_snr = get_snr
 
