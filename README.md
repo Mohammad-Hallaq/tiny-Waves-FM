@@ -30,8 +30,8 @@ The following table provides the pre-trained checkpoints at a masking ratio 75%.
 <th valign="bottom">ViT-L</th>
 <!-- TABLE BODY -->
 <tr><td align="left">pre-trained checkpoint</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/mae/pretrain/mae_pretrain_vit_base.pth">download</a></td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/mae/pretrain/mae_pretrain_vit_large.pth">download</a></td>
+<td align="center"><a href="https://www.dropbox.com/scl/fi/eaeca6qteggkpkkb81a5o/pretrained_small_75.pth?rlkey=xxeweov1aj84pi7ka7rm1yfqc&st=tfi175k4&dl=0">download</a></td>
+<td align="center"><a href="https://www.dropbox.com/scl/fi/jq6kcd9854h5wfvvrszgy/pretrained_medium_75.pth?rlkey=iuo62u5i7d4jchfrb8tmmj86r&st=z4wnpa56&dl=0">download</a></td>
 <td align="center"><a href="">download</a></td>
 </tr>
 <tr><td align="left">number of parameters</td>
@@ -54,7 +54,8 @@ Run our interactive visualization demo using [Colab notebook]() (no GPU needed):
 </p>
 
 ### Fine-tuning with pre-trained checkpoints
-We finetune the pretrained models on two tasks: Spectrogram Segmentation and CSI-based human activity sensing.
+We finetune the pretrained models on two tasks: Spectrogram Segmentation and CSI-based human activity sensing. 
+We only finetune the task head, keeping the whole encoder frozen (linear probing).
 ### Spectrogram Segmentation
 The task is to segment a spectrogram which includes 5G NR and LTE transmissions in neighboring bands, into three 
 classes: NR, LTE and Noise.
@@ -101,7 +102,6 @@ Mean accuracy on the segmentation task from finetuning the pretrained models:
 </tr>
 </tbody>
 </table>
-
 
 ### CSI-based Human Activity Sensing
 The task is to identify human activity based on WiFi CSI measurements available at [WiFi-CSI-Sensing-Benchmark](https://github.com/xyanchen/WiFi-CSI-Sensing-Benchmark?tab=readme-ov-file). 
