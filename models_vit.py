@@ -20,9 +20,10 @@ import timm.models.vision_transformer
 class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
     """ Vision Transformer with support for global average pooling
     """
-    def __init__(self, global_pool, **kwargs):
+    def __init__(self, global_pool, tanh=False, **kwargs):
         super(VisionTransformer, self).__init__(**kwargs)
         self.global_pool = global_pool
+        self.tanh = tanh
 
     def freeze_encoder(self, num_blocks=None):
         if num_blocks is None:
@@ -34,6 +35,13 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
 
         for param in self.patch_embed.proj.parameters():
             param.requires_grad = False
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.forward_features(x)
+        x = self.forward_head(x)
+        if self.tanh:
+            return torch.tanh(x)
+        return x
 
 
 def vit_small_patch16(**kwargs):
