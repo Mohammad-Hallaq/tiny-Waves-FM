@@ -25,8 +25,8 @@ def calculate_mse(y_true, y_pred):
 
 # load model
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-model_type = 'ce_small_patch16'
-checkpoint_file = Path('output_dir_small_ce/checkpoint-0.pth')
+model_type = 'ce_medium_patch16'
+checkpoint_file = Path('checkpoints/ofdm_ce_medium_75.pth')
 model = models_ofdm_ce.__dict__[model_type]()
 # checkpoint = torch.load(checkpoint_file, map_location='cpu')['model']
 # msg = model.load_state_dict(checkpoint, strict=True)
