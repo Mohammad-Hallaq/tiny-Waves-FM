@@ -12,22 +12,18 @@ class OfdmChannelEstimation(Dataset):
         self.batch_size = batch_size
         self.file_list = os.listdir(self.data_path)
         if compute_stats:
-            self.mu, self.std, self.mu_label, self.std_label, self.min_label, self.max_label = self._compute_stats()
+            self.min_features, self.max_features, self.min_label, self.max_label = self._compute_stats_two()
         else:
-            self.mu = [4.2e-3, -4.3e-3]
-            self.std = [1.211, 1.211]
-            self.mu_label = [-1.1e-3, -1.47e-3]
-            self.std_label = [0.95, 0.95]
-            self.min_label = -6.85
-            self.max_label = 6.67
+            self.min_features = -12.33
+            self.max_features = 13.09
+            self.min_label = -6.49
+            self.max_label = 6.34
 
         self.transform = Compose([Lambda(lambda x: torch.as_tensor(x, dtype=torch.float32)),
-                                  Normalize(mean=self.mu, std=self.std),
+                                  Lambda(lambda x: 2 * (x - self.min_features) / (self.max_features - self.min_features) - 1),
                                   Resize((224, 224), interpolation=InterpolationMode.BICUBIC, antialias=True),])
         self.transform_label = Compose([Lambda(lambda x: torch.as_tensor(x, dtype=torch.float32)),
-                                        Lambda(lambda x: 2 * (x - self.min_label) / (self.max_label - self.min_label) - 1)
-                                        ])
-                                        #Normalize(mean=self.mu_label, std=self.std_label)])
+                                        Lambda(lambda x: 2 * (x - self.min_label) / (self.max_label - self.min_label) - 1)])
 
     def _compute_stats(self):
         mu = np.zeros((2,), dtype=np.float32)
@@ -64,6 +60,24 @@ class OfdmChannelEstimation(Dataset):
 
         return mu.tolist(), std.tolist(), mu_label.tolist(), std_label.tolist(), min_label, max_label
 
+    def _compute_stats_two(self):
+        min_features, max_features = np.inf, -np.inf
+        min_label, max_label = np.inf, -np.inf
+        for file in self.file_list:
+            data = np.load(os.path.join(self.data_path, file))
+            x_rg_pilot = np.concatenate((data['x_rg'][:, 2], data['x_rg'][:, 11]), axis=1)
+            x_rg_pilot = np.stack((x_rg_pilot.real, x_rg_pilot.imag), axis=1)
+            y_rg_pilot = np.concatenate((data['y_rg'][:, :, 2], data['y_rg'][:, :, 11]), axis=2)
+            y_rg_pilot = np.stack((y_rg_pilot.real, y_rg_pilot.imag), axis=1)
+            x_model = np.concatenate((x_rg_pilot.reshape((self.batch_size, 2, 1, -1)), y_rg_pilot), axis=2)
+            h_freq = np.concatenate([data['h_freq'][:, :, i] for i in range(14)], axis=2)
+            h_freq = np.stack((h_freq.real, h_freq.imag), axis=1)
+            min_features = min(min_features, np.min(x_model))
+            max_features = max(max_features, np.max(x_model))
+            min_label = min(min_label, np.min(h_freq))
+            max_label = max(max_label, np.max(h_freq))
+        return min_features, max_features, min_label, max_label
+
     def __getitem__(self, index):
         file_idx = index // self.batch_size
         sample_idx = index % self.batch_size
@@ -86,29 +100,10 @@ class OfdmChannelEstimation(Dataset):
         return self.transform(x_model)
 
     def reverse_normalize(self, h):
+        h = (h + 1) / 2 * (self.max_label - self.min_label) + self.min_label
         # h = (h * np.array(self.std_label, dtype=np.float32).reshape((1, 2, 1, 1)) +
         #      np.array(self.mu_label, dtype=np.float32).reshape((1, 2, 1, 1)))
-        return (h + 1) / 2 * (self.max_label - self.min_label) + self.min_label
+        return h
 
     def __len__(self):
         return len(self.file_list) * self.batch_size
-
-
-# from pathlib import Path
-# dataset = OfdmChannelEstimation(Path('../../datasets/channel_estimation_dataset/train'))
-# for i in range(10):
-#     file_idx = i // dataset.batch_size
-#     sample_idx = i % dataset.batch_size
-#     data = np.load(os.path.join(dataset.data_path, dataset.file_list[file_idx]))
-#     y_original = data['h_freq'][sample_idx]
-#     y_original = np.concatenate([y_original[:, i] for i in range(14)], axis=1)
-#     y_original = np.stack((y_original.real, y_original.imag), axis=0)
-#     x, y = dataset[i]
-#     x, y = x.numpy(), y.numpy()
-#     mu = np.mean(x, axis=(1, 2))
-#     std = np.std(x, axis=(1, 2))
-#     mu_label = np.mean(y, axis=(1, 2))
-#     std_label = np.std(y, axis=(1, 2))
-#     min_label = np.min(y)
-#     max_label = np.max(y)
-#     print(f'mu: {mu}\n std: {std}\n mu_label: {mu_label}\n std_label: {std_label}\n min_label: {min_label}\n max_label: {max_label}')
