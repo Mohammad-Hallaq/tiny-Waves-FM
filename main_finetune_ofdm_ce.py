@@ -16,34 +16,35 @@ import numpy as np
 import os
 import time
 from pathlib import Path
+import random
 
 import torch
 import torch.backends.cudnn as cudnn
 from torch.utils.tensorboard import SummaryWriter
+from torch.utils.data import random_split
 
 import util.lr_decay as lrd
 import util.misc as misc
 from util.misc import NativeScalerWithGradNormCount as NativeScaler
 from timm.layers import trunc_normal_
-from timm.loss import LabelSmoothingCrossEntropy, SoftTargetCrossEntropy
 from timm.data.mixup import Mixup
 
-import models_vit
+import models_ofdm_ce
+import math
 
-from engine_finetune import train_one_epoch, evaluate
-from dataset_classes.amc_images import AMCImages
+from engine_finetune_regression import train_one_epoch, evaluate
+from dataset_classes.ofdm_channel_estimation import OfdmChannelEstimation
 
 
 def get_args_parser():
-    parser = argparse.ArgumentParser('MAE fine-tuning for AMC', add_help=False)
+    parser = argparse.ArgumentParser('MAE fine-tuning for MIMO/OFDM Channel Estimation', add_help=False)
     parser.add_argument('--batch_size', default=64, type=int,
                         help='Batch size per GPU (effective batch size is batch_size * accum_iter * # gpus')
     parser.add_argument('--epochs', default=50, type=int)
     parser.add_argument('--accum_iter', default=1, type=int,
                         help='Accumulate gradient iterations (for increasing the effective batch size under memory constraints)')
-
     # Model parameters
-    parser.add_argument('--model', default='seg_vit_large_patch16', type=str, metavar='MODEL',
+    parser.add_argument('--model', default='ce_large_patch16', type=str, metavar='MODEL',
                         help='Name of model to train')
 
     parser.add_argument('--input_size', default=224, type=int,
@@ -51,6 +52,7 @@ def get_args_parser():
 
     parser.add_argument('--drop_path', type=float, default=0.1, metavar='PCT',
                         help='Drop path rate (default: 0.1)')
+    parser.add_argument('--frozen_blocks', type=int, help='number of encoder blocks to freeze. Freezes all by default')
 
     # Optimizer parameters
     parser.add_argument('--clip_grad', type=float, default=None, metavar='NORM',
@@ -76,9 +78,6 @@ def get_args_parser():
                         help='Color jitter factor (enabled only when not using Auto/RandAug)')
     parser.add_argument('--aa', type=str, default='rand-m9-mstd0.5-inc1', metavar='NAME',
                         help='Use AutoAugment policy. "v0" or "original". " + "(default: rand-m9-mstd0.5-inc1)'),
-    parser.add_argument('--smoothing', type=float, default=0,
-                        help='Label smoothing (default: 0)')
-
     # * Random Erase params
     parser.add_argument('--reprob', type=float, default=0.25, metavar='PCT',
                         help='Random erase prob (default: 0.25)')
@@ -106,13 +105,13 @@ def get_args_parser():
     # * Finetuning params
     parser.add_argument('--finetune', default='',
                         help='finetune from checkpoint')
-    parser.add_argument('--global_pool', default='token')
+    parser.add_argument('--global_pool', default='avg')
 
     # Dataset parameters
     parser.add_argument('--data_path', default='', type=str,
                         help='dataset path')
-    parser.add_argument('--nb_classes', default=10, type=int,
-                        help='number of the classification types')
+    parser.add_argument('--nb_outputs', default=3, type=int,
+                        help='number of outputs')
 
     parser.add_argument('--output_dir', default='./output_dir',
                         help='path where to save, empty for no saving')
@@ -143,7 +142,6 @@ def get_args_parser():
     parser.add_argument('--dist_on_itp', action='store_true')
     parser.add_argument('--dist_url', default='env://',
                         help='url used to set up distributed training')
-    parser.add_argument('--frozen_layers', type=int, default=None)
 
     return parser
 
@@ -157,18 +155,16 @@ def main(args):
     device = torch.device(args.device)
 
     # fix the seed for reproducibility
-    seed = args.seed + misc.get_rank()
+    # seed = args.seed + misc.get_rank()
+    seed = 42
     torch.manual_seed(seed)
     np.random.seed(seed)
+    random.seed(seed)
 
     cudnn.benchmark = True
 
-    torch.manual_seed(42)
-    dataset = AMCImages(Path('../datasets/amc_synthetic'))
-
-    train_size = int(0.7 * len(dataset))
-    test_size = len(dataset) - train_size
-    dataset_train, dataset_val = torch.utils.data.random_split(dataset, [train_size, test_size])
+    dataset = OfdmChannelEstimation(Path('../datasets/channel_estimation_dataset/train'))
+    dataset_train, dataset_val = random_split(dataset, [0.5, 0.5], generator=torch.Generator().manual_seed(seed))
 
     num_tasks = misc.get_world_size()
     global_rank = misc.get_rank()
@@ -208,41 +204,35 @@ def main(args):
         drop_last=False
     )
 
-    mixup_active = args.mixup > 0 or args.cutmix > 0. or args.cutmix_minmax is not None
-    if mixup_active:
-        print("Mixup is activated!")
-        mixup_fn = Mixup(
-            mixup_alpha=args.mixup, cutmix_alpha=args.cutmix, cutmix_minmax=args.cutmix_minmax,
-            prob=args.mixup_prob, switch_prob=args.mixup_switch_prob, mode=args.mixup_mode,
-            label_smoothing=args.smoothing, num_classes=args.nb_classes)
-    else:
-        mixup_fn = None
 
-    model = models_vit.__dict__[args.model](global_pool=args.global_pool, num_classes=args.nb_classes,
-                                            drop_path_rate=args.drop_path, in_chans=1)
+    model = models_ofdm_ce.__dict__[args.model]()
+    #
+    # if args.resume:
+    #     checkpoint = torch.load(args.resume, map_location='cpu')
+    #     print("Load pre-trained checkpoint from: %s" % args.resume)
+    #     checkpoint_model = checkpoint['model']
+    #     msg = model.load_state_dict(checkpoint_model, strict=False)
+    #     print(msg)
 
     if args.finetune and not args.eval:
         checkpoint = torch.load(args.finetune, map_location='cpu')
-
         print("Load pre-trained checkpoint from: %s" % args.finetune)
         checkpoint_model = checkpoint['model']
         state_dict = model.state_dict()
-        for k in ['head.weight', 'head.bias']:
+        for k in ['head.weight', 'head.bias', 'pos_embed', 'decoder_pred.weight', 'decoder_pred.bias']:
             if k in checkpoint_model and checkpoint_model[k].shape != state_dict[k].shape:
                 print(f"Removing key {k} from pretrained checkpoint")
                 del checkpoint_model[k]
+        checkpoint_model['patch_embed.proj.weight'] = checkpoint_model['patch_embed.proj.weight'].expand(-1, 2, -1, -1)
 
         # load pre-trained model
         msg = model.load_state_dict(checkpoint_model, strict=False)
         print(msg)
-        # manually initialize fc layer
-        trunc_normal_(model.head.weight, std=2e-5)
 
-    if not args.frozen_layers:
-        print('Freezing the full backbone.')
+    if args.frozen_blocks is not None:
+        model.freeze_encoder(args.frozen_blocks)
     else:
-        print(f'Freezing {args.frozen_layers} layers.')
-    model.freeze_encoder(args.frozen_layers)
+        model.freeze_encoder()
     model.to(device)
 
     model_without_ddp = model
@@ -271,49 +261,41 @@ def main(args):
     optimizer = torch.optim.AdamW(param_groups, lr=args.lr)
     loss_scaler = NativeScaler()
 
-    if mixup_fn is not None:
-        # smoothing is handled with mixup label transform
-        criterion = SoftTargetCrossEntropy()
-    elif args.smoothing > 0.:
-        criterion = LabelSmoothingCrossEntropy(smoothing=args.smoothing)
-    else:
-        criterion = torch.nn.CrossEntropyLoss()
-
+    criterion = torch.nn.MSELoss()
+    # criterion = torch.nn.SmoothL1Loss()
     print("criterion = %s" % str(criterion))
 
     misc.load_model(args=args, model_without_ddp=model_without_ddp, optimizer=optimizer, loss_scaler=loss_scaler)
 
     if args.eval:
-        test_stats = evaluate(data_loader_val, model, criterion, device)
-        print(f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
+        test_stats = evaluate(data_loader_val, model, device)
+        print(f"Error of the network on the {len(dataset_val)} test images: {test_stats['loss']:.4f}")
         exit(0)
 
     print(f"Start training for {args.epochs} epochs")
     start_time = time.time()
-    max_accuracy = 0.0
+    min_error = math.inf
     for epoch in range(args.start_epoch, args.epochs):
         if args.distributed:
             data_loader_train.sampler.set_epoch(epoch)
         train_stats = train_one_epoch(
             model, criterion, data_loader_train,
             optimizer, device, epoch, loss_scaler,
-            args.clip_grad, mixup_fn,
+            args.clip_grad, None,
             log_writer=log_writer,
             args=args
         )
-        if args.output_dir:
+        if args.output_dir and epoch % 10 == 0:
             misc.save_model(
                 args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
                 loss_scaler=loss_scaler, epoch=epoch)
 
         test_stats = evaluate(data_loader_val, model, criterion, device)
-        print(f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
-        max_accuracy = max(max_accuracy, test_stats["acc1"])
-        print(f'Max accuracy: {max_accuracy:.2f}%')
+        print(f"Error of the network on the {len(dataset_val)} test images: {test_stats['loss']:.4f}")
+        min_error = min(min_error, test_stats["loss"])
+        print(f'Test error: {min_error:.4f}')
 
         if log_writer is not None:
-            log_writer.add_scalar('perf/test_acc1', test_stats['acc1'], epoch)
-            log_writer.add_scalar('perf/test_acc3', test_stats['acc3'], epoch)
             log_writer.add_scalar('perf/test_loss', test_stats['loss'], epoch)
 
         log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},

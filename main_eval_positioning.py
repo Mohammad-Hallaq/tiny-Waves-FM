@@ -18,16 +18,18 @@ seed = 42
 torch.manual_seed(seed)
 np.random.seed(seed)
 random.seed(seed)
-dataset = PositioningNR(Path('../datasets/5G_NR_Positioning'))
+scene = 'indoor'
+dataset = PositioningNR(Path('../datasets/5G_NR_Positioning'), scene=scene)
 dataset_train, dataset_test = random_split(dataset, [0.8, 0.2], generator=torch.Generator().manual_seed(seed))
 coord_min, coord_max = dataset.coord_nominal_min.view((1, -1)), dataset.coord_nominal_max.view((1, -1))
 
-dataloader_train = DataLoader(dataset_train, batch_size=64, shuffle=False, num_workers=0)
-dataloader_test = DataLoader(dataset_test, batch_size=64, shuffle=False, num_workers=0)
+dataloader_train = DataLoader(dataset_train, batch_size=256, shuffle=False, num_workers=0)
+dataloader_test = DataLoader(dataset_test, batch_size=256, shuffle=False, num_workers=0)
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-model = models_vit.__dict__['vit_medium_patch16'](global_pool='avg', num_classes=3, drop_path_rate=0.1, in_chans=4)
-checkpoint = torch.load(Path('checkpoints/checkpoint-20.pth'), map_location='cpu')
+# device = 'cpu'
+model = models_vit.__dict__['vit_medium_patch16'](global_pool='token', num_classes=3, drop_path_rate=0.1, in_chans=5)
+checkpoint = torch.load(Path('checkpoints/checkpoint-70.pth'), map_location='cpu')
 msg = model.load_state_dict(checkpoint['model'], strict=True)
 print(msg)
 
@@ -83,6 +85,9 @@ mean_train = np.mean(distances_train)
 mean_test = np.mean(distances_test)
 
 fig, axs = plt.subplots(1, 2, figsize=(10, 5))
+model = 'Finetuning ViT-M'
+other = '(2 out of 12 blocks + linear layer)'
+fig.suptitle(f'{model} {other}\n{scene} scenario')
 bins = 25
 axs[0].hist(distances_train, bins=bins, color='red', edgecolor='w', alpha=0.7, density=True)
 axs[0].axvline(mean_train, color='black', linestyle='--', linewidth=2, label=f'Mean: {mean_train:.2f} (m)')

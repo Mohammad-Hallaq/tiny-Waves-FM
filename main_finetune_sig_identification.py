@@ -27,15 +27,16 @@ from util.misc import NativeScalerWithGradNormCount as NativeScaler
 from timm.layers import trunc_normal_
 from timm.loss import LabelSmoothingCrossEntropy, SoftTargetCrossEntropy
 from timm.data.mixup import Mixup
+from sklearn.model_selection import StratifiedShuffleSplit
 
 import models_vit
 
 from engine_finetune import train_one_epoch, evaluate
-from dataset_classes.amc_images import AMCImages
+from dataset_classes.radio_sig import RadioSignal
 
 
 def get_args_parser():
-    parser = argparse.ArgumentParser('MAE fine-tuning for AMC', add_help=False)
+    parser = argparse.ArgumentParser('MAE fine-tuning for Radio Signal Identification', add_help=False)
     parser.add_argument('--batch_size', default=64, type=int,
                         help='Batch size per GPU (effective batch size is batch_size * accum_iter * # gpus')
     parser.add_argument('--epochs', default=50, type=int)
@@ -43,7 +44,7 @@ def get_args_parser():
                         help='Accumulate gradient iterations (for increasing the effective batch size under memory constraints)')
 
     # Model parameters
-    parser.add_argument('--model', default='seg_vit_large_patch16', type=str, metavar='MODEL',
+    parser.add_argument('--model', default='vit_large_patch16', type=str, metavar='MODEL',
                         help='Name of model to train')
 
     parser.add_argument('--input_size', default=224, type=int,
@@ -51,6 +52,7 @@ def get_args_parser():
 
     parser.add_argument('--drop_path', type=float, default=0.1, metavar='PCT',
                         help='Drop path rate (default: 0.1)')
+    parser.add_argument('--frozen_blocks', type=int, help='number of encoder blocks to freeze. Freezes all by default')
 
     # Optimizer parameters
     parser.add_argument('--clip_grad', type=float, default=None, metavar='NORM',
@@ -111,7 +113,7 @@ def get_args_parser():
     # Dataset parameters
     parser.add_argument('--data_path', default='', type=str,
                         help='dataset path')
-    parser.add_argument('--nb_classes', default=10, type=int,
+    parser.add_argument('--nb_classes', default=20, type=int,
                         help='number of the classification types')
 
     parser.add_argument('--output_dir', default='./output_dir',
@@ -143,8 +145,6 @@ def get_args_parser():
     parser.add_argument('--dist_on_itp', action='store_true')
     parser.add_argument('--dist_url', default='env://',
                         help='url used to set up distributed training')
-    parser.add_argument('--frozen_layers', type=int, default=None)
-
     return parser
 
 
@@ -157,18 +157,20 @@ def main(args):
     device = torch.device(args.device)
 
     # fix the seed for reproducibility
-    seed = args.seed + misc.get_rank()
+    seed = 42
     torch.manual_seed(seed)
     np.random.seed(seed)
 
     cudnn.benchmark = True
 
-    torch.manual_seed(42)
-    dataset = AMCImages(Path('../datasets/amc_synthetic'))
+    dataset = RadioSignal(Path('../datasets/radio_sig_identification'))
+    splitter = StratifiedShuffleSplit(n_splits=1, train_size=0.8, test_size=0.2, random_state=seed)
+    all_labels = [dataset[i][1] for i in range(len(dataset))]
 
-    train_size = int(0.7 * len(dataset))
-    test_size = len(dataset) - train_size
-    dataset_train, dataset_val = torch.utils.data.random_split(dataset, [train_size, test_size])
+    for train_idx, test_idx in splitter.split(range(len(dataset)), all_labels):
+        dataset_train = torch.utils.data.Subset(dataset, train_idx)
+        dataset_val = torch.utils.data.Subset(dataset, test_idx)
+
 
     num_tasks = misc.get_world_size()
     global_rank = misc.get_rank()
@@ -238,11 +240,10 @@ def main(args):
         # manually initialize fc layer
         trunc_normal_(model.head.weight, std=2e-5)
 
-    if not args.frozen_layers:
-        print('Freezing the full backbone.')
+    if args.frozen_blocks is not None:
+        model.freeze_encoder(args.frozen_blocks)
     else:
-        print(f'Freezing {args.frozen_layers} layers.')
-    model.freeze_encoder(args.frozen_layers)
+        model.freeze_encoder()
     model.to(device)
 
     model_without_ddp = model
@@ -270,6 +271,7 @@ def main(args):
     param_groups = lrd.param_groups_lrd(model_without_ddp, args.weight_decay, layer_decay=args.layer_decay)
     optimizer = torch.optim.AdamW(param_groups, lr=args.lr)
     loss_scaler = NativeScaler()
+    class_weights = dataset.class_weights.to(device)
 
     if mixup_fn is not None:
         # smoothing is handled with mixup label transform
@@ -277,7 +279,7 @@ def main(args):
     elif args.smoothing > 0.:
         criterion = LabelSmoothingCrossEntropy(smoothing=args.smoothing)
     else:
-        criterion = torch.nn.CrossEntropyLoss()
+        criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
 
     print("criterion = %s" % str(criterion))
 
@@ -285,7 +287,7 @@ def main(args):
 
     if args.eval:
         test_stats = evaluate(data_loader_val, model, criterion, device)
-        print(f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
+        print(f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.3f}%")
         exit(0)
 
     print(f"Start training for {args.epochs} epochs")
@@ -301,15 +303,15 @@ def main(args):
             log_writer=log_writer,
             args=args
         )
-        if args.output_dir:
+        if args.output_dir and epoch % 10 == 0:
             misc.save_model(
                 args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
                 loss_scaler=loss_scaler, epoch=epoch)
 
         test_stats = evaluate(data_loader_val, model, criterion, device)
-        print(f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
+        print(f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.3f}%")
         max_accuracy = max(max_accuracy, test_stats["acc1"])
-        print(f'Max accuracy: {max_accuracy:.2f}%')
+        print(f'Max accuracy: {max_accuracy:.3f}%')
 
         if log_writer is not None:
             log_writer.add_scalar('perf/test_acc1', test_stats['acc1'], epoch)

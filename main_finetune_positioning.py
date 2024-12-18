@@ -32,7 +32,7 @@ from timm.data.mixup import Mixup
 import models_vit
 import math
 
-from engine_finetune_positioning import train_one_epoch, evaluate
+from engine_finetune_regression import train_one_epoch, evaluate
 from dataset_classes.positioning_nr import PositioningNR
 
 
@@ -43,7 +43,7 @@ def get_args_parser():
     parser.add_argument('--epochs', default=50, type=int)
     parser.add_argument('--accum_iter', default=1, type=int,
                         help='Accumulate gradient iterations (for increasing the effective batch size under memory constraints)')
-
+    parser.add_argument('--scene', default='outdoor', type=str, choices=['indoor', 'outdoor'], help='Scene to use')
     # Model parameters
     parser.add_argument('--model', default='vit_large_patch16', type=str, metavar='MODEL',
                         help='Name of model to train')
@@ -165,7 +165,7 @@ def main(args):
 
     cudnn.benchmark = True
 
-    dataset = PositioningNR(Path('../datasets/5G_NR_Positioning'))
+    dataset = PositioningNR(Path('../datasets/5G_NR_Positioning'), scene=args.scene)
     dataset_train, dataset_val = random_split(dataset, [0.8, 0.2], generator=torch.Generator().manual_seed(seed))
 
     num_tasks = misc.get_world_size()
@@ -206,8 +206,10 @@ def main(args):
         drop_last=False
     )
 
+
     model = models_vit.__dict__[args.model](global_pool=args.global_pool, num_classes=args.nb_outputs,
-                                            drop_path_rate=args.drop_path, tanh=args.tanh, in_chans=4)
+                                            drop_path_rate=args.drop_path, tanh=args.tanh,
+                                            in_chans=4 if args.scene == 'outdoor' else 5)
     #
     # if args.resume:
     #     checkpoint = torch.load(args.resume, map_location='cpu')
@@ -225,7 +227,10 @@ def main(args):
             if k in checkpoint_model and checkpoint_model[k].shape != state_dict[k].shape:
                 print(f"Removing key {k} from pretrained checkpoint")
                 del checkpoint_model[k]
-        checkpoint_model['patch_embed.proj.weight'] = checkpoint_model['patch_embed.proj.weight'].expand(-1, 4, -1, -1)
+        if args.scene == 'outdoor':
+            checkpoint_model['patch_embed.proj.weight'] = checkpoint_model['patch_embed.proj.weight'].expand(-1, 4, -1, -1)
+        else:
+            checkpoint_model['patch_embed.proj.weight'] = checkpoint_model['patch_embed.proj.weight'].expand(-1, 5, -1, -1)
 
         # load pre-trained model
         msg = model.load_state_dict(checkpoint_model, strict=False)
@@ -265,8 +270,8 @@ def main(args):
     optimizer = torch.optim.AdamW(param_groups, lr=args.lr)
     loss_scaler = NativeScaler()
 
-    # criterion = torch.nn.MSELoss()
-    criterion = torch.nn.SmoothL1Loss()
+    criterion = torch.nn.MSELoss()
+    # criterion = torch.nn.SmoothL1Loss()
     print("criterion = %s" % str(criterion))
 
     misc.load_model(args=args, model_without_ddp=model_without_ddp, optimizer=optimizer, loss_scaler=loss_scaler)
@@ -294,7 +299,7 @@ def main(args):
                 args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
                 loss_scaler=loss_scaler, epoch=epoch)
 
-        test_stats = evaluate(data_loader_val, model, device)
+        test_stats = evaluate(data_loader_val, model, criterion, device)
         print(f"Error of the network on the {len(dataset_val)} test images: {test_stats['loss']:.4f}")
         min_error = min(min_error, test_stats["loss"])
         print(f'Test error: {min_error:.4f}')

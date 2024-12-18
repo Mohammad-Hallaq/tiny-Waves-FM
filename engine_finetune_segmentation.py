@@ -98,9 +98,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
 
 
 @torch.no_grad()
-def evaluate(data_loader, model, device):
-    criterion = torch.nn.CrossEntropyLoss()
-
+def evaluate(data_loader, model, criterion, device):
     metric_logger = misc.MetricLogger(delimiter="  ")
     header = 'Test:'
 
