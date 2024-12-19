@@ -12,15 +12,18 @@ class OfdmChannelEstimation(Dataset):
         self.batch_size = batch_size
         self.file_list = os.listdir(self.data_path)
         if compute_stats:
-            self.min_features, self.max_features, self.min_label, self.max_label = self._compute_stats_two()
+            self.min_features, self.max_features, self.min_label, self.max_label, self.mu, self.std = self._compute_stats_two()
         else:
             self.min_features = -12.33
             self.max_features = 13.09
             self.min_label = -6.49
             self.max_label = 6.34
+            self.mu = [-0.0297, -0.0304]
+            self.std = [0.0953, 0.0953]
 
         self.transform = Compose([Lambda(lambda x: torch.as_tensor(x, dtype=torch.float32)),
                                   Lambda(lambda x: 2 * (x - self.min_features) / (self.max_features - self.min_features) - 1),
+                                  Normalize(mean=self.mu, std=self.std),
                                   Resize((224, 224), interpolation=InterpolationMode.BICUBIC, antialias=True),])
         self.transform_label = Compose([Lambda(lambda x: torch.as_tensor(x, dtype=torch.float32)),
                                         Lambda(lambda x: 2 * (x - self.min_label) / (self.max_label - self.min_label) - 1)])
@@ -76,7 +79,22 @@ class OfdmChannelEstimation(Dataset):
             max_features = max(max_features, np.max(x_model))
             min_label = min(min_label, np.min(h_freq))
             max_label = max(max_label, np.max(h_freq))
-        return min_features, max_features, min_label, max_label
+
+        mu = np.zeros((2,))
+        std = np.zeros((2,))
+        for file in self.file_list:
+            data = np.load(os.path.join(self.data_path, file))
+            x_rg_pilot = np.concatenate((data['x_rg'][:, 2], data['x_rg'][:, 11]), axis=1)
+            x_rg_pilot = np.stack((x_rg_pilot.real, x_rg_pilot.imag), axis=1)
+            y_rg_pilot = np.concatenate((data['y_rg'][:, :, 2], data['y_rg'][:, :, 11]), axis=2)
+            y_rg_pilot = np.stack((y_rg_pilot.real, y_rg_pilot.imag), axis=1)
+            x_model = np.concatenate((x_rg_pilot.reshape((self.batch_size, 2, 1, -1)), y_rg_pilot), axis=2)
+            x_model = 2 * (x_model - min_features) / (max_features - min_features) - 1
+            mu += np.mean(x_model, axis=(0, 2, 3))
+            std += np.std(x_model, axis=(0, 2, 3))
+        mu /= len(self.file_list)
+        std /= len(self.file_list)
+        return min_features, max_features, min_label, max_label, mu.tolist(), std.tolist()
 
     def __getitem__(self, index):
         file_idx = index // self.batch_size
