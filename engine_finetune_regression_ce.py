@@ -23,8 +23,8 @@ import util.lr_sched as lr_sched
 import torch
 
 
-def model_function(x, a=0.1, b=0.23, c=1e-4):
-    return 1/(a * torch.exp(-b * x) + c)
+def model_function(x, a=0.01, b=0.23, c=1e-4):
+    return a * torch.exp(b * x) + c
 
 
 def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
