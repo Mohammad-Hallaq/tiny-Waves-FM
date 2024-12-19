@@ -108,7 +108,7 @@ def get_args_parser():
     parser.add_argument('--global_pool', default='avg')
 
     # Dataset parameters
-    parser.add_argument('--data_path', default='', type=str,
+    parser.add_argument('--data_path', default='../datasets/channel_estimation_dataset/train', type=str,
                         help='dataset path')
     parser.add_argument('--nb_outputs', default=3, type=int,
                         help='number of outputs')
