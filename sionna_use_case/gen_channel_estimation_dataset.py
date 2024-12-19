@@ -17,7 +17,7 @@ from sionna.utils import QAMSource
 import os
 
 
-estimate_cov = True
+estimate_cov = False
 # system parameters
 subcarrier_spacing = 30e3  # Hz
 carrier_frequency = 3.5e9  # Hz
@@ -89,7 +89,7 @@ num_it = 25
 for i in tqdm(range(num_it), total=num_it, desc='Iteration'):
     x = qam_source([batch_size, 1, 1, rg.num_data_symbols])
     x_rg = rg_mapper(x)
-    snr_db = np.random.normal(2, 3)
+    snr_db = np.random.normal(2, 3, (batch_size,))
     no = tf.pow(10.0, -snr_db / 10.0)
     topology = gen_single_sector_topology(batch_size, 1, 'umi', min_ut_velocity=speed, max_ut_velocity=speed)
     channel_model.set_topology(*topology)
