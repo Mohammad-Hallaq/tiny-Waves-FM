@@ -2,6 +2,7 @@ import numpy as np
 from tqdm import tqdm
 import tensorflow as tf
 from pathlib import Path
+import sys
 
 tf.get_logger().setLevel('ERROR')
 try:
@@ -23,7 +24,7 @@ subcarrier_spacing = 30e3  # Hz
 carrier_frequency = 3.5e9  # Hz
 speed = 3.  # m/s
 fft_size = 12*4   # 4 PRBs
-num_ofdm_symbols =14
+num_ofdm_symbols = 14
 num_rx_ant = 16
 
 # The user terminals (UTs) are equipped with a single antenna
@@ -80,7 +81,7 @@ if not estimate_cov:
     time_cov_mat = np.load('time_cov_mat.npy')
     space_cov_mat = np.load('space_cov_mat.npy')
 
-mode = 'train'
+mode = sys.argv[1]
 data_dir_path = Path(f'../../datasets/channel_estimation_dataset/{mode}')
 os.makedirs(data_dir_path, exist_ok=True)
 all_snr_db = np.linspace(-10.0, 20.0, 30)
@@ -89,7 +90,10 @@ num_it = 25
 for i in tqdm(range(num_it), total=num_it, desc='Iteration'):
     x = qam_source([batch_size, 1, 1, rg.num_data_symbols])
     x_rg = rg_mapper(x)
-    snr_db = np.random.choice(all_snr_db, (batch_size,))
+    if mode == 'train':
+        snr_db = np.zeros((batch_size,), dtype=np.float32)
+    else:
+        snr_db = np.random.choice(all_snr_db, (batch_size,))
     no = tf.pow(10.0, -snr_db / 10.0)
     topology = gen_single_sector_topology(batch_size, 1, 'umi', min_ut_velocity=speed, max_ut_velocity=speed)
     channel_model.set_topology(*topology)

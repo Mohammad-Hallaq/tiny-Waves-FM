@@ -20,6 +20,7 @@ import random
 
 import torch
 import torch.backends.cudnn as cudnn
+from torch.nn import MSELoss
 from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data import random_split
 
@@ -72,7 +73,7 @@ def get_args_parser():
 
     parser.add_argument('--warmup_epochs', type=int, default=5, metavar='N',
                         help='epochs to warmup LR')
-
+    parser.add_argument('--weighted_loss', action='store_true', default=False, help='use weighted loss')
     # Augmentation parameters
     parser.add_argument('--color_jitter', type=float, default=None, metavar='PCT',
                         help='Color jitter factor (enabled only when not using Auto/RandAug)')
@@ -108,7 +109,7 @@ def get_args_parser():
     parser.add_argument('--global_pool', default='avg')
 
     # Dataset parameters
-    parser.add_argument('--data_path', default='../datasets/channel_estimation_dataset/train', type=str,
+    parser.add_argument('--data_path', default='../datasets/channel_estimation_dataset/', type=str,
                         help='dataset path')
     parser.add_argument('--nb_outputs', default=3, type=int,
                         help='number of outputs')
@@ -163,8 +164,10 @@ def main(args):
 
     cudnn.benchmark = True
 
-    dataset = OfdmChannelEstimation(Path(args.data_path), normalize_labels=args.normalize_labels)
-    dataset_train, dataset_val = random_split(dataset, [0.75, 0.25], generator=torch.Generator().manual_seed(seed))
+    dataset_train = OfdmChannelEstimation(os.path.join(Path(args.data_path), 'train'), normalize_labels=args.normalize_labels)
+    dataset_val = OfdmChannelEstimation(Path(args.data_path, 'test'), normalize_labels=args.normalize_labels)
+
+    # dataset_train, dataset_val = random_split(dataset, [0.75, 0.25], generator=torch.Generator().manual_seed(seed))
 
     num_tasks = misc.get_world_size()
     global_rank = misc.get_rank()
@@ -261,7 +264,10 @@ def main(args):
     optimizer = torch.optim.AdamW(param_groups, lr=args.lr)
     loss_scaler = NativeScaler()
 
-    criterion = WeightedMSELoss()
+    if args.weighted_loss:
+        criterion = WeightedMSELoss()
+    else:
+        criterion = torch.nn.MSELoss()
     print("criterion = %s" % str(criterion))
 
     misc.load_model(args=args, model_without_ddp=model_without_ddp, optimizer=optimizer, loss_scaler=loss_scaler)
