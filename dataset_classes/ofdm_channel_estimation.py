@@ -7,7 +7,7 @@ from torchvision.transforms import Compose, Lambda, Normalize, Resize, Interpola
 
 
 class OfdmChannelEstimation(Dataset):
-    def __init__(self, data_path, batch_size=64, compute_stats=False, normalize_labels=True):
+    def __init__(self, data_path, batch_size=64, compute_stats=False, normalize_labels=False):
         self.data_path = data_path
         self.batch_size = batch_size
         self.file_list = os.listdir(self.data_path)
