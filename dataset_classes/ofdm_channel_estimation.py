@@ -7,7 +7,7 @@ from torchvision.transforms import Compose, Lambda, Normalize, Resize, Interpola
 
 
 class OfdmChannelEstimation(Dataset):
-    def __init__(self, data_path, batch_size=64, compute_stats=False):
+    def __init__(self, data_path, batch_size=64, compute_stats=False, normalize_labels=True):
         self.data_path = data_path
         self.batch_size = batch_size
         self.file_list = os.listdir(self.data_path)
@@ -25,8 +25,12 @@ class OfdmChannelEstimation(Dataset):
                                   Lambda(lambda x: 2 * (x - self.min_features) / (self.max_features - self.min_features) - 1),
                                   Normalize(mean=self.mu, std=self.std),
                                   Resize((224, 224), interpolation=InterpolationMode.BICUBIC, antialias=True),])
-        self.transform_label = Compose([Lambda(lambda x: torch.as_tensor(x, dtype=torch.float32)),
-                                        Lambda(lambda x: 2 * (x - self.min_label) / (self.max_label - self.min_label) - 1)])
+        self.transform_label = Lambda(lambda x: torch.as_tensor(x, dtype=torch.float32))
+        if normalize_labels:
+            self.transform_label = Compose([Lambda(lambda x: torch.as_tensor(x, dtype=torch.float32)),
+                                            Lambda(lambda x: 2 * (x - self.min_label) / (self.max_label - self.min_label) - 1)])
+        else:
+            self.transform_label = Lambda(lambda x: torch.as_tensor(x, dtype=torch.float32))
 
     def _compute_stats(self):
         mu = np.zeros((2,), dtype=np.float32)

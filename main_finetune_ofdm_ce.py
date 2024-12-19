@@ -53,7 +53,7 @@ def get_args_parser():
     parser.add_argument('--drop_path', type=float, default=0.1, metavar='PCT',
                         help='Drop path rate (default: 0.1)')
     parser.add_argument('--frozen_blocks', type=int, help='number of encoder blocks to freeze. Freezes all by default')
-
+    parser.add_argument('--normalize_labels', type=bool, default=True, help='Whether to normalize labels before training')
     # Optimizer parameters
     parser.add_argument('--clip_grad', type=float, default=None, metavar='NORM',
                         help='Clip gradient norm (default: None, no clipping)')
@@ -163,7 +163,7 @@ def main(args):
 
     cudnn.benchmark = True
 
-    dataset = OfdmChannelEstimation(Path('../datasets/channel_estimation_dataset/train'))
+    dataset = OfdmChannelEstimation(Path('../datasets/channel_estimation_dataset/train'), normalize_labels=args.normalize_labels)
     dataset_train, dataset_val = random_split(dataset, [0.5, 0.5], generator=torch.Generator().manual_seed(seed))
 
     num_tasks = misc.get_world_size()
