@@ -83,13 +83,13 @@ if not estimate_cov:
 mode = 'train'
 data_dir_path = Path(f'../../datasets/channel_estimation_dataset/{mode}')
 os.makedirs(data_dir_path, exist_ok=True)
-all_snr_db = np.linspace(-10.0, 20.0, 31)
+# all_snr_db = np.linspace(-10.0, 20.0, 20)
 batch_size = 64
-num_it = 1000
+num_it = 25
 for i in tqdm(range(num_it), total=num_it, desc='Iteration'):
     x = qam_source([batch_size, 1, 1, rg.num_data_symbols])
     x_rg = rg_mapper(x)
-    snr_db = np.random.choice(all_snr_db)
+    snr_db = np.random.normal(2, 3)
     no = tf.pow(10.0, -snr_db / 10.0)
     topology = gen_single_sector_topology(batch_size, 1, 'umi', min_ut_velocity=speed, max_ut_velocity=speed)
     channel_model.set_topology(*topology)
@@ -97,6 +97,6 @@ for i in tqdm(range(num_it), total=num_it, desc='Iteration'):
     x_rg = np.squeeze(x_rg.numpy())
     y_rg = np.squeeze(y_rg.numpy())
     h_freq = np.squeeze(h_freq.numpy())
-    file_path = os.path.join(data_dir_path, f'batch_{i}_snr_{snr_db}.npz')
+    file_path = os.path.join(data_dir_path, f'batch_{i}_snr_{snr_db:2}.npz')
     # Save all variables into a single .npz file
     np.savez(file_path, x_rg=x_rg, y_rg=y_rg, h_freq=h_freq, snr_db=snr_db)

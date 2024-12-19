@@ -164,7 +164,7 @@ def main(args):
     cudnn.benchmark = True
 
     dataset = OfdmChannelEstimation(Path('../datasets/channel_estimation_dataset/train'), normalize_labels=args.unnormalize_labels)
-    dataset_train, dataset_val = random_split(dataset, [0.5, 0.5], generator=torch.Generator().manual_seed(seed))
+    dataset_train, dataset_val = random_split(dataset, [0.75, 0.25], generator=torch.Generator().manual_seed(seed))
 
     num_tasks = misc.get_world_size()
     global_rank = misc.get_rank()
