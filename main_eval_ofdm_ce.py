@@ -23,14 +23,15 @@ def calculate_mse(y_true, y_pred):
     return np.mean(np.abs(y_true - y_pred) ** 2)
 
 
+normalized = False
 # load model
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-model_type = 'ce_medium_patch16'
-checkpoint_file = Path('checkpoints/ofdm_ce_medium_75.pth')
+model_type = 'ce_small_patch16'
+checkpoint_file = Path('checkpoints/ofdm_ce_small_low.pth')
 model = models_ofdm_ce.__dict__[model_type]()
-# checkpoint = torch.load(checkpoint_file, map_location='cpu')['model']
-# msg = model.load_state_dict(checkpoint, strict=True)
-# print(msg)
+checkpoint = torch.load(checkpoint_file, map_location='cpu')['model']
+msg = model.load_state_dict(checkpoint, strict=True)
+print(msg)
 model = model.to(device)
 
 # system parameters
@@ -98,7 +99,7 @@ mse_model = np.zeros((len(all_snr_db),))
 mse_ls = np.zeros((len(all_snr_db),))
 mse_lmmse = np.zeros((len(all_snr_db),))
 batch_size = 64
-num_it = 10
+num_it = 5
 
 with torch.no_grad():
     for i, snr_db in enumerate(all_snr_db):
@@ -116,7 +117,10 @@ with torch.no_grad():
             x_rg = np.squeeze(x_rg.numpy())
             y_rg = np.squeeze(y_rg.numpy())
             x_model = dataset.create_sample(x_rg, y_rg).to(device)
-            h_model = dataset.reverse_normalize(model(x_model).cpu().numpy())
+            if normalized:
+                h_model = dataset.reverse_normalize(model(x_model).cpu().numpy())
+            else:
+                h_model = model(x_model).cpu().numpy()
             h_model = h_model[:, 0] + 1j * h_model[:, 1]
             mse_ls[i] += calculate_mse(h_freq, h_ls)
             mse_lmmse[i] += calculate_mse(h_freq, h_lmmse)
@@ -138,3 +142,4 @@ ax.set_ylabel('MSE')
 plt.tight_layout()
 plt.savefig('ofdm_ce_mse.png')
 plt.show()
+test = []

@@ -111,7 +111,8 @@ class OfdmChannelEstimation(Dataset):
         x_model = np.concatenate((x_rg_pilot.reshape((2, 1, -1)), y_rg_pilot), axis=1)
         h_freq = np.concatenate([data['h_freq'][sample_idx, :, i] for i in range(14)], axis=1)
         h_freq = np.stack((h_freq.real, h_freq.imag), axis=0)
-        return self.transform(x_model), self.transform_label(h_freq)
+        snr_db = torch.as_tensor(data['snr_db'][sample_idx], dtype=torch.float32)
+        return self.transform(x_model), self.transform_label(h_freq), snr_db
 
     def create_sample(self, x_rg, y_rg):
         x_rg_pilot = np.concatenate((x_rg[:, 2], x_rg[:, 11]), axis=1)

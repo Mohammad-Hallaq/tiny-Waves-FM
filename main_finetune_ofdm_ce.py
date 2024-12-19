@@ -32,9 +32,9 @@ from timm.data.mixup import Mixup
 import models_ofdm_ce
 import math
 
-from engine_finetune_regression import train_one_epoch, evaluate
+from engine_finetune_regression_ce import train_one_epoch, evaluate
 from dataset_classes.ofdm_channel_estimation import OfdmChannelEstimation
-
+from snr_weighted_mse_loss import WeightedMSELoss
 
 def get_args_parser():
     parser = argparse.ArgumentParser('MAE fine-tuning for MIMO/OFDM Channel Estimation', add_help=False)
@@ -261,8 +261,7 @@ def main(args):
     optimizer = torch.optim.AdamW(param_groups, lr=args.lr)
     loss_scaler = NativeScaler()
 
-    criterion = torch.nn.MSELoss()
-    # criterion = torch.nn.SmoothL1Loss()
+    criterion = WeightedMSELoss()
     print("criterion = %s" % str(criterion))
 
     misc.load_model(args=args, model_without_ddp=model_without_ddp, optimizer=optimizer, loss_scaler=loss_scaler)
