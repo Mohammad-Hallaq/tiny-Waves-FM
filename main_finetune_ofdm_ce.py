@@ -165,7 +165,7 @@ def main(args):
     cudnn.benchmark = True
 
     dataset_train = OfdmChannelEstimation(os.path.join(Path(args.data_path), 'train'), normalize_labels=args.normalize_labels)
-    dataset_val = OfdmChannelEstimation(Path(args.data_path, 'test'), normalize_labels=args.normalize_labels)
+    dataset_val = OfdmChannelEstimation(Path(args.data_path, 'val'), normalize_labels=args.normalize_labels)
 
     # dataset_train, dataset_val = random_split(dataset, [0.75, 0.25], generator=torch.Generator().manual_seed(seed))
 
