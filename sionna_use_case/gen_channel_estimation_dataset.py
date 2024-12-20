@@ -91,7 +91,7 @@ for i in tqdm(range(num_it), total=num_it, desc='Iteration'):
     x = qam_source([batch_size, 1, 1, rg.num_data_symbols])
     x_rg = rg_mapper(x)
     if mode == 'train':
-        snr_db = np.zeros((batch_size,), dtype=np.float32)
+        snr_db = np.random.choice([0.0, 15.0], (batch_size,))
     else:
         snr_db = np.random.choice(all_snr_db, (batch_size,))
     no = tf.pow(10.0, -snr_db / 10.0)

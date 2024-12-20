@@ -25,8 +25,13 @@ from snr_weighted_mse_loss import WeightedMSELoss
 from torch.nn import MSELoss
 
 
-def model_function(x, a=0.01, b=0.23, c=1e-4):
-    return a * torch.exp(b * x) + c
+# def model_function(x, a=0.01, b=0.23, c=1e-4):
+#     return a * torch.exp(b * x) + c
+def model_function(x):
+    w = torch.zeros_like(x)
+    w[x == 15] = 3
+    w[x == 0] = 1
+    return w
 
 
 def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
@@ -110,7 +115,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
 
 @torch.no_grad()
 def evaluate(data_loader, model, criterion, device):
-
+    criterion = MSELoss()
     metric_logger = misc.MetricLogger(delimiter="  ")
     header = 'Test:'
 
