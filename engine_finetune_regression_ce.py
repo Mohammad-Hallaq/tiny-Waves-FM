@@ -49,11 +49,11 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         if data_iter_step % accum_iter == 0:
             lr_sched.adjust_learning_rate(optimizer, data_iter_step / len(data_loader) + epoch, args)
 
-        samples, targets, weights = batch
+        samples, targets, snr = batch
         if isinstance(criterion, WeightedLoss):
             samples = samples.to(device, non_blocking=True)
             targets = targets.to(device, non_blocking=True)
-            weights = weights.to(device, non_blocking=True)
+            snr = snr.to(device, non_blocking=True)
         else:
             samples = samples.to(device, non_blocking=True)
             targets = targets.to(device, non_blocking=True)
@@ -61,7 +61,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         with torch.cuda.amp.autocast():
             outputs = model(samples)
             if isinstance(criterion, WeightedLoss):
-                loss = criterion(outputs, targets, weights)
+                loss = criterion(outputs, targets, snr)
             else:
                 loss = criterion(outputs, targets)
 
@@ -113,11 +113,11 @@ def evaluate(data_loader, model, criterion, device):
     model.eval()
 
     for batch in metric_logger.log_every(data_loader, 10, header):
-        samples, targets, weights = batch
+        samples, targets, snr = batch
         if isinstance(criterion, WeightedLoss):
             samples = samples.to(device, non_blocking=True)
             targets = targets.to(device, non_blocking=True)
-            weights = model_function(weights).to(device, non_blocking=True)
+            snr = snr.to(device, non_blocking=True)
         else:
             samples = samples.to(device, non_blocking=True)
             targets = targets.to(device, non_blocking=True)
@@ -125,7 +125,7 @@ def evaluate(data_loader, model, criterion, device):
         with torch.cuda.amp.autocast():
             outputs = model(samples)
             if isinstance(criterion, WeightedLoss):
-                loss = criterion(outputs, targets, weights)
+                loss = criterion(outputs, targets, snr)
             else:
                 loss = criterion(outputs, targets)
 
