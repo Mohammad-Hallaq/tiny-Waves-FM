@@ -20,14 +20,13 @@ import random
 
 import torch
 import torch.backends.cudnn as cudnn
-from torch.nn import MSELoss
+from torch.nn import MSELoss, L1Loss
 from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data import random_split
 
 import util.lr_decay as lrd
 import util.misc as misc
 from util.misc import NativeScalerWithGradNormCount as NativeScaler
-from timm.layers import trunc_normal_
 from timm.data.mixup import Mixup
 
 import models_ofdm_ce
@@ -35,7 +34,7 @@ import math
 
 from engine_finetune_regression_ce import train_one_epoch, evaluate
 from dataset_classes.ofdm_channel_estimation import OfdmChannelEstimation
-from snr_weighted_mse_loss import WeightedMSELoss
+from snr_weighted_loss import WeightedLoss
 
 def get_args_parser():
     parser = argparse.ArgumentParser('MAE fine-tuning for MIMO/OFDM Channel Estimation', add_help=False)
@@ -73,7 +72,10 @@ def get_args_parser():
 
     parser.add_argument('--warmup_epochs', type=int, default=5, metavar='N',
                         help='epochs to warmup LR')
+    parser.add_argument('--loss', default='mse', type=str)
     parser.add_argument('--weighted_loss', action='store_true', default=False, help='use weighted loss')
+    parser.add_argument('--loss_mode', default='linear', help='weighted loss mode'
+                        )
     # Augmentation parameters
     parser.add_argument('--color_jitter', type=float, default=None, metavar='PCT',
                         help='Color jitter factor (enabled only when not using Auto/RandAug)')
@@ -164,7 +166,7 @@ def main(args):
 
     cudnn.benchmark = True
 
-    dataset_train = OfdmChannelEstimation(os.path.join(Path(args.data_path), 'train'), normalize_labels=args.normalize_labels)
+    dataset_train = OfdmChannelEstimation(os.path.join(Path(args.data_path), 'val'), normalize_labels=args.normalize_labels)
     dataset_val = OfdmChannelEstimation(Path(args.data_path, 'val'), normalize_labels=args.normalize_labels)
 
     # dataset_train, dataset_val = random_split(dataset, [0.75, 0.25], generator=torch.Generator().manual_seed(seed))
@@ -265,9 +267,12 @@ def main(args):
     loss_scaler = NativeScaler()
 
     if args.weighted_loss:
-        criterion = WeightedMSELoss()
-    else:
-        criterion = torch.nn.MSELoss()
+        criterion = WeightedLoss(args.loss, args.loss_mode)
+    elif args.loss == 'mse':
+        criterion = MSELoss()
+    elif args.loss == 'mae':
+        criterion = L1Loss()
+
     print("criterion = %s" % str(criterion))
 
     misc.load_model(args=args, model_without_ddp=model_without_ddp, optimizer=optimizer, loss_scaler=loss_scaler)

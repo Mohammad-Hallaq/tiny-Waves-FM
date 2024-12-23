@@ -21,17 +21,8 @@ from timm.utils import accuracy
 import util.misc as misc
 import util.lr_sched as lr_sched
 import torch
-from snr_weighted_mse_loss import WeightedMSELoss
+from snr_weighted_loss import WeightedLoss
 from torch.nn import MSELoss
-
-
-def model_function(x, a=0.1, b=0.23, c=1e-4):
-    return torch.log10(1 / (a * torch.exp(-b * x) + c)) + 1
-# def model_function(x):
-#     w = torch.zeros_like(x)
-#     w[x == 15] = 3
-#     w[x == 0] = 1
-#     return w
 
 
 def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
@@ -59,17 +50,17 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
             lr_sched.adjust_learning_rate(optimizer, data_iter_step / len(data_loader) + epoch, args)
 
         samples, targets, weights = batch
-        if isinstance(criterion, WeightedMSELoss):
+        if isinstance(criterion, WeightedLoss):
             samples = samples.to(device, non_blocking=True)
             targets = targets.to(device, non_blocking=True)
-            weights = model_function(weights).to(device, non_blocking=True)
+            weights = weights.to(device, non_blocking=True)
         else:
             samples = samples.to(device, non_blocking=True)
             targets = targets.to(device, non_blocking=True)
 
         with torch.cuda.amp.autocast():
             outputs = model(samples)
-            if isinstance(criterion, WeightedMSELoss):
+            if isinstance(criterion, WeightedLoss):
                 loss = criterion(outputs, targets, weights)
             else:
                 loss = criterion(outputs, targets)
@@ -115,7 +106,6 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
 
 @torch.no_grad()
 def evaluate(data_loader, model, criterion, device):
-    criterion = MSELoss()
     metric_logger = misc.MetricLogger(delimiter="  ")
     header = 'Test:'
 
@@ -124,7 +114,7 @@ def evaluate(data_loader, model, criterion, device):
 
     for batch in metric_logger.log_every(data_loader, 10, header):
         samples, targets, weights = batch
-        if isinstance(criterion, WeightedMSELoss):
+        if isinstance(criterion, WeightedLoss):
             samples = samples.to(device, non_blocking=True)
             targets = targets.to(device, non_blocking=True)
             weights = model_function(weights).to(device, non_blocking=True)
@@ -134,7 +124,7 @@ def evaluate(data_loader, model, criterion, device):
 
         with torch.cuda.amp.autocast():
             outputs = model(samples)
-            if isinstance(criterion, WeightedMSELoss):
+            if isinstance(criterion, WeightedLoss):
                 loss = criterion(outputs, targets, weights)
             else:
                 loss = criterion(outputs, targets)
