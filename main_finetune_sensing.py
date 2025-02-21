@@ -29,6 +29,7 @@ from timm.loss import LabelSmoothingCrossEntropy, SoftTargetCrossEntropy
 from timm.data.mixup import Mixup
 
 import models_vit
+from advanced_finetuning.lora import create_lora_model
 
 from engine_finetune import train_one_epoch, evaluate
 from dataset_classes.csi_sensing import CSISensingDataset
@@ -46,11 +47,18 @@ def get_args_parser():
     parser.add_argument('--model', default='seg_vit_large_patch16', type=str, metavar='MODEL',
                         help='Name of model to train')
 
+
     parser.add_argument('--input_size', default=224, type=int,
                         help='images input size')
 
     parser.add_argument('--drop_path', type=float, default=0.1, metavar='PCT',
                         help='Drop path rate (default: 0.1)')
+
+    parser.add_argument('--lora', action='store_true', help='Whether to use LoRa (default: False)')
+
+    parser.add_argument('--lora_rank', type=int, default=8, help='Rank of LoRa (default: 8)')
+
+    parser.add_argument('--lora_alpha', type=float, default=1, help='Alpha for LoRa (default: 0.5)')
 
     # Optimizer parameters
     parser.add_argument('--clip_grad', type=float, default=None, metavar='NORM',
@@ -216,6 +224,8 @@ def main(args):
 
     model = models_vit.__dict__[args.model](global_pool=args.global_pool, num_classes=args.nb_classes,
                                             drop_path_rate=args.drop_path)
+    if args.lora:
+        model = create_lora_model(model, args.lora_rank, args.lora_alpha)
 
     if args.finetune and not args.eval:
         checkpoint = torch.load(args.finetune, map_location='cpu')
@@ -235,7 +245,9 @@ def main(args):
         # manually initialize fc layer
         trunc_normal_(model.head.weight, std=2e-5)
 
-    model.freeze_encoder()
+    if not args.lora:
+        model.freeze_encoder()
+
     model.to(device)
 
     model_without_ddp = model
@@ -294,7 +306,7 @@ def main(args):
             log_writer=log_writer,
             args=args
         )
-        if args.output_dir:
+        if args.output_dir and (epoch + 1) % 10 == 0:
             misc.save_model(
                 args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
                 loss_scaler=loss_scaler, epoch=epoch)

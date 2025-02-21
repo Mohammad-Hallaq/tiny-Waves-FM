@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from tqdm import tqdm
 import numpy as np
+from advanced_finetuning.lora import create_lora_model
 
 
 def main(args):
@@ -27,14 +28,8 @@ def main(args):
     with torch.no_grad():
         ckpt = torch.load(ckpt_path, map_location=device)['model']
         model = getattr(models_vit, model_name)(global_pool='token', num_classes=6)
-        state_dict = model.state_dict()
-        for k in ['head.weight', 'head.bias', 'pos_embed']:
-            if k in ckpt and ckpt[k].shape != state_dict[k].shape:
-                print(f"Removing key {k} from pretrained checkpoint")
-                del ckpt[k]
-        ckpt['patch_embed.proj.weight'] = ckpt['patch_embed.proj.weight'].expand(-1, 3, -1, -1)
-
-        model.load_state_dict(ckpt, strict=False)
+        # model = create_lora_model(model, lora_rank=40, lora_alpha=1)
+        model.load_state_dict(ckpt, strict=True)
 
         model = model.to(device)
 
