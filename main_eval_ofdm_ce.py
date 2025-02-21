@@ -23,22 +23,34 @@ def calculate_mse(y_true, y_pred):
     return np.mean(np.abs(y_true - y_pred) ** 2)
 
 
+def calculate_mae(y_true, y_pred):
+    return np.mean(np.abs(y_true - y_pred))
+
+
 normalized = False
 # load model
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+model_keys = ['small_ce_weighted_l2']
 model_type = 'ce_small_patch16'
-checkpoint_file = Path('checkpoints/ofdm_ce_small_low.pth')
-model = models_ofdm_ce.__dict__[model_type]()
-checkpoint = torch.load(checkpoint_file, map_location='cpu')['model']
-msg = model.load_state_dict(checkpoint, strict=True)
-print(msg)
-model = model.to(device)
+ckpt = '%s_checkpoint-230.pth'
+
+
+models = list()
+for model_key in model_keys:
+    checkpoint_file = Path(f'checkpoints/{ckpt % model_key}')
+    model = models_ofdm_ce.__dict__[model_type]()
+    checkpoint = torch.load(checkpoint_file, map_location='cpu')['model']
+    msg = model.load_state_dict(checkpoint, strict=True)
+    print(model_key, msg)
+    model = model.to(device)
+    models.append(model)
+
 
 # system parameters
 subcarrier_spacing = 30e3  # Hz
 carrier_frequency = 3.5e9  # Hz
 speed = 3.  # m/s
-fft_size = 12*4   # 4 PRBs
+fft_size = 12 * 4   # 4 PRBs
 num_ofdm_symbols = 14
 num_rx_ant = 16
 
@@ -95,9 +107,10 @@ lmmse_estimator = LSChannelEstimator(rg, interpolator=lmmse_int_freq_first)
 
 dataset = OfdmChannelEstimation(Path('../datasets/channel_estimation_dataset/'))
 all_snr_db = range(-10, 21, 2)
-mse_model = np.zeros((len(all_snr_db),))
+mse_models = np.zeros((len(models), len(all_snr_db),))
 mse_ls = np.zeros((len(all_snr_db),))
 mse_lmmse = np.zeros((len(all_snr_db),))
+
 batch_size = 64
 num_it = 5
 
@@ -114,32 +127,40 @@ with torch.no_grad():
             h_ls = np.squeeze(ls_estimator((y_rg, no))[0].numpy())
             h_lmmse = np.squeeze(lmmse_estimator((y_rg, no))[0].numpy())
             h_freq = np.squeeze(h_freq.numpy())
+            mse_ls[i] += calculate_mse(h_freq, h_ls)
+            mse_lmmse[i] += calculate_mse(h_freq, h_lmmse)
             x_rg = np.squeeze(x_rg.numpy())
             y_rg = np.squeeze(y_rg.numpy())
             x_model = dataset.create_sample(x_rg, y_rg).to(device)
-            if normalized:
-                h_model = dataset.reverse_normalize(model(x_model).cpu().numpy())
-            else:
-                h_model = model(x_model).cpu().numpy()
-            h_model = h_model[:, 0] + 1j * h_model[:, 1]
-            mse_ls[i] += calculate_mse(h_freq, h_ls)
-            mse_lmmse[i] += calculate_mse(h_freq, h_lmmse)
             h_freq = np.concatenate([h_freq[:, :, i] for i in range(14)], axis=-1)
-            mse_model[i] += calculate_mse(h_freq, h_model)
+            for j, model in enumerate(models):
+                if normalized:
+                    h_model = dataset.reverse_normalize(model(x_model).cpu().numpy())
+                else:
+                    h_model = model(x_model).cpu().numpy()
+                h_model = h_model[:, 0] + 1j * h_model[:, 1]
+                mse_models[j, i] += calculate_mse(h_freq, h_model)
 
-mse_model /= num_it
+mse_models /= num_it
 mse_ls /= num_it
 mse_lmmse /= num_it
 
+model_colors = ['r', 'c', 'm', 'y']
+model_name = 'ViT-S' if model_type == 'ce_small_patch16' else model_type
+
+plt.rcParams['font.family'] = 'serif'
 fig, ax = plt.subplots(1, 1)
-ax.semilogy(all_snr_db, mse_model, label='Radio FM', color='r', linewidth=2, marker='o')
+# ax.set_title(f'MIMO OFDM Channel Estimation\nFinetuning {model_name} ({ckpt})')
 ax.semilogy(all_snr_db, mse_ls, label='LS Estimator', color='b', linewidth=2, marker='*')
 ax.semilogy(all_snr_db, mse_lmmse, label='LMMSE Estimator', color='g', linewidth=2, marker='s')
-ax.legend(loc='lower left')
+for i, model in enumerate(models):
+    ax.semilogy(all_snr_db, mse_models[i], label='SRFM', color=model_colors[i], linewidth=2, marker='o')
+
+ax.legend(loc='lower left', fontsize=13)
 ax.grid(True)
-ax.set_xlabel('SNR (dB)')
-ax.set_ylabel('MSE')
+ax.set_xlabel('SNR (dB)', fontsize=16)
+ax.set_ylabel('MSE', fontsize=16)
 plt.tight_layout()
-plt.savefig('ofdm_ce_mse.png')
+plt.savefig('Figures/ofdm_ce_mse.png')
 plt.show()
 test = []

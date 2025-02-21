@@ -20,10 +20,16 @@ import timm.models.vision_transformer
 class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
     """ Vision Transformer with support for global average pooling
     """
-    def __init__(self, global_pool, tanh=False, **kwargs):
+    def __init__(self, global_pool, tanh=False, head_layers=1, **kwargs):
         super(VisionTransformer, self).__init__(**kwargs)
         self.global_pool = global_pool
         self.tanh = tanh
+        num_classes = kwargs['num_classes']
+        layers = []
+        for i in range(head_layers - 1):
+            layers.extend([nn.Linear(self.embed_dim, self.embed_dim), nn.ReLU()])
+        layers.append(nn.Linear(self.embed_dim, num_classes))
+        self.head = nn.Sequential(*layers) if head_layers > 1 else nn.Linear(self.embed_dim, num_classes)
 
     def freeze_encoder(self, num_blocks=None):
         if num_blocks is None:

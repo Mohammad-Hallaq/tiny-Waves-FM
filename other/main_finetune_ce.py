@@ -20,23 +20,22 @@ from pathlib import Path
 import torch
 import torch.backends.cudnn as cudnn
 from torch.utils.tensorboard import SummaryWriter
+import random
+
 
 import util.lr_decay as lrd
 import util.misc as misc
 from util.misc import NativeScalerWithGradNormCount as NativeScaler
-from timm.layers import trunc_normal_
-from timm.loss import LabelSmoothingCrossEntropy, SoftTargetCrossEntropy
-from timm.data.mixup import Mixup
-from sklearn.model_selection import StratifiedShuffleSplit
 
-import models_vit
+import models_ce
 
-from engine_finetune import train_one_epoch, evaluate
-from dataset_classes.radio_sig import RadioSignal
+from other.engine_finetune_ce import train_one_epoch, evaluate
+from other.mimo_channel_estimation import MIMOChannelEstimation
+import math
 
 
 def get_args_parser():
-    parser = argparse.ArgumentParser('MAE fine-tuning for Radio Signal Identification', add_help=False)
+    parser = argparse.ArgumentParser('MAE fine-tuning for channel estimation', add_help=False)
     parser.add_argument('--batch_size', default=64, type=int,
                         help='Batch size per GPU (effective batch size is batch_size * accum_iter * # gpus')
     parser.add_argument('--epochs', default=50, type=int)
@@ -44,18 +43,15 @@ def get_args_parser():
                         help='Accumulate gradient iterations (for increasing the effective batch size under memory constraints)')
 
     # Model parameters
-    parser.add_argument('--model', default='vit_large_patch16', type=str, metavar='MODEL',
+    parser.add_argument('--model', default='ce_vit_small_patch16', type=str, metavar='MODEL',
                         help='Name of model to train')
 
     parser.add_argument('--input_size', default=224, type=int,
                         help='images input size')
-    parser.add_argument('--head_layers', default=1, type=int,
-                        help='number of layers in task head')
 
     parser.add_argument('--drop_path', type=float, default=0.1, metavar='PCT',
                         help='Drop path rate (default: 0.1)')
-    parser.add_argument('--frozen_blocks', type=int, help='number of encoder blocks to freeze. '
-                                                          'Freezes all by default')
+    parser.add_argument('--frozen_blocks', type=int, help='number of encoder blocks to freeze. Freezes all by default')
 
     # Optimizer parameters
     parser.add_argument('--clip_grad', type=float, default=None, metavar='NORM',
@@ -111,13 +107,10 @@ def get_args_parser():
     # * Finetuning params
     parser.add_argument('--finetune', default='',
                         help='finetune from checkpoint')
-    parser.add_argument('--global_pool', default='token')
 
     # Dataset parameters
     parser.add_argument('--data_path', default='', type=str,
                         help='dataset path')
-    parser.add_argument('--nb_classes', default=20, type=int,
-                        help='number of the classification types')
 
     parser.add_argument('--output_dir', default='./output_dir',
                         help='path where to save, empty for no saving')
@@ -148,6 +141,7 @@ def get_args_parser():
     parser.add_argument('--dist_on_itp', action='store_true')
     parser.add_argument('--dist_url', default='env://',
                         help='url used to set up distributed training')
+
     return parser
 
 
@@ -161,20 +155,19 @@ def main(args):
 
     # fix the seed for reproducibility
     seed = 42
+
+    random.seed(seed)
     torch.manual_seed(seed)
     np.random.seed(seed)
 
     cudnn.benchmark = True
+    subset_size = 8000
+    dataset = MIMOChannelEstimation(Path('../../datasets/channel_estimation/train.b'))
+    dataset_train = torch.utils.data.Subset(dataset, random.sample(range(len(dataset)), subset_size))
+    dataset_val = torch.utils.data.Subset(dataset, random.sample(range(len(dataset)), subset_size // 4))
 
-    dataset = RadioSignal(Path('../datasets/radio_sig_identification_data_split/train'))
-    print(dataset.data_path)
-    splitter = StratifiedShuffleSplit(n_splits=1, train_size=0.9, test_size=0.1, random_state=seed)
-    all_labels = [dataset[i][1] for i in range(len(dataset))]
 
-    for train_idx, test_idx in splitter.split(range(len(dataset)), all_labels):
-        dataset_train = torch.utils.data.Subset(dataset, train_idx)
-        dataset_val = torch.utils.data.Subset(dataset, test_idx)
-
+    # if True:  # args.distributed:
     num_tasks = misc.get_world_size()
     global_rank = misc.get_rank()
     sampler_train = torch.utils.data.DistributedSampler(
@@ -190,6 +183,9 @@ def main(args):
             dataset_val, num_replicas=num_tasks, rank=global_rank, shuffle=True)  # shuffle=True to reduce monitor bias
     else:
         sampler_val = torch.utils.data.SequentialSampler(dataset_val)
+    # else:
+    #     sampler_train = torch.utils.data.RandomSampler(dataset_train)
+    #     sampler_val = torch.utils.data.SequentialSampler(dataset_val)
 
     if global_rank == 0 and args.log_dir is not None and not args.eval:
         os.makedirs(args.log_dir, exist_ok=True)
@@ -213,35 +209,21 @@ def main(args):
         drop_last=False
     )
 
-    mixup_active = args.mixup > 0 or args.cutmix > 0. or args.cutmix_minmax is not None
-    if mixup_active:
-        print("Mixup is activated!")
-        mixup_fn = Mixup(
-            mixup_alpha=args.mixup, cutmix_alpha=args.cutmix, cutmix_minmax=args.cutmix_minmax,
-            prob=args.mixup_prob, switch_prob=args.mixup_switch_prob, mode=args.mixup_mode,
-            label_smoothing=args.smoothing, num_classes=args.nb_classes)
-    else:
-        mixup_fn = None
-
-    model = models_vit.__dict__[args.model](global_pool=args.global_pool, num_classes=args.nb_classes,
-                                            drop_path_rate=args.drop_path, in_chans=1, head_layers=args.head_layers)
+    model = models_ce.__dict__[args.model]()
 
     if args.finetune and not args.eval:
         checkpoint = torch.load(args.finetune, map_location='cpu')
 
         print("Load pre-trained checkpoint from: %s" % args.finetune)
         checkpoint_model = checkpoint['model']
-        state_dict = model.state_dict()
-        for k in ['head.weight', 'head.bias']:
-            if k in checkpoint_model and checkpoint_model[k].shape != state_dict[k].shape:
-                print(f"Removing key {k} from pretrained checkpoint")
-                del checkpoint_model[k]
+        del checkpoint_model['decoder_pred.weight']
+        del checkpoint_model['decoder_pred.bias']
+        del checkpoint_model['mask_token']
+        checkpoint_model['patch_embed.proj.weight'] = checkpoint_model['patch_embed.proj.weight'].expand(-1, 2, -1, -1)
 
         # load pre-trained model
         msg = model.load_state_dict(checkpoint_model, strict=False)
         print(msg)
-        # manually initialize fc layer
-        # trunc_normal_(model.head.weight, std=2e-5)
 
     if args.frozen_blocks is not None:
         model.freeze_encoder(args.frozen_blocks)
@@ -256,7 +238,7 @@ def main(args):
     print('number of params (M): %.2f' % (n_parameters / 1.e6))
 
     eff_batch_size = args.batch_size * args.accum_iter * misc.get_world_size()
-    
+
     if args.lr is None:  # only base_lr is specified
         args.lr = args.blr * eff_batch_size / 256
 
@@ -274,35 +256,28 @@ def main(args):
     param_groups = lrd.param_groups_lrd(model_without_ddp, args.weight_decay, layer_decay=args.layer_decay)
     optimizer = torch.optim.AdamW(param_groups, lr=args.lr)
     loss_scaler = NativeScaler()
-    class_weights = dataset.class_weights.to(device)
 
-    if mixup_fn is not None:
-        # smoothing is handled with mixup label transform
-        criterion = SoftTargetCrossEntropy()
-    elif args.smoothing > 0.:
-        criterion = LabelSmoothingCrossEntropy(smoothing=args.smoothing)
-    else:
-        criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
-
+    criterion = torch.nn.MSELoss()
+    # criterion = torch.nn.SmoothL1Loss()
     print("criterion = %s" % str(criterion))
 
     misc.load_model(args=args, model_without_ddp=model_without_ddp, optimizer=optimizer, loss_scaler=loss_scaler)
 
     if args.eval:
-        test_stats = evaluate(data_loader_val, model, criterion, device)
-        print(f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.3f}%")
+        test_stats = evaluate(data_loader_val, model, device)
+        print(f"Error of the network on the {len(dataset_val)} test images: {test_stats['loss']:.4f}")
         exit(0)
 
     print(f"Start training for {args.epochs} epochs")
     start_time = time.time()
-    max_accuracy = 0.0
+    min_error = math.inf
     for epoch in range(args.start_epoch, args.epochs):
         if args.distributed:
             data_loader_train.sampler.set_epoch(epoch)
         train_stats = train_one_epoch(
             model, criterion, data_loader_train,
             optimizer, device, epoch, loss_scaler,
-            args.clip_grad, mixup_fn,
+            args.clip_grad, None,
             log_writer=log_writer,
             args=args
         )
@@ -311,14 +286,12 @@ def main(args):
                 args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
                 loss_scaler=loss_scaler, epoch=epoch)
 
-        test_stats = evaluate(data_loader_val, model, criterion, device)
-        print(f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.3f}%")
-        max_accuracy = max(max_accuracy, test_stats["acc1"])
-        print(f'Max accuracy: {max_accuracy:.3f}%')
+        test_stats = evaluate(data_loader_val, model, device)
+        print(f"Error of the network on the {len(dataset_val)} test images: {test_stats['loss']:.4f}")
+        min_error = min(min_error, test_stats["loss"])
+        print(f'Test error: {min_error:.4f}')
 
         if log_writer is not None:
-            log_writer.add_scalar('perf/test_acc1', test_stats['acc1'], epoch)
-            log_writer.add_scalar('perf/test_acc3', test_stats['acc3'], epoch)
             log_writer.add_scalar('perf/test_loss', test_stats['loss'], epoch)
 
         log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},

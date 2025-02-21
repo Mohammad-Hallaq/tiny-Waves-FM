@@ -7,7 +7,7 @@ from PIL import Image
 import os
 from tqdm import tqdm
 
-data_path = Path('../datasets/amc_rml16')
+data_path = Path('../datasets/amc_rml22')
 os.makedirs(data_path, exist_ok=True)
 mfft = 1024
 hop = 128
@@ -17,9 +17,9 @@ SFT = ShortTimeFFT(win=win, hop=hop, fs=1, scale_to='magnitude', fft_mode='cente
 num_slices = 50
 num_samples = 2000 // num_slices
 
-file_path = Path('../datasets/RML/RML2016.10a_dict.pkl')
+file_path = Path('../datasets/RML/RML22.01A')
 with open(file_path, "rb") as file:
-    data = pickle.load(file, encoding="latin1")
+    data = pickle.load(file)
 
 for i, (label, sig) in tqdm(enumerate(data.items()), total=len(data), desc="Processing signals"):
     modulation, snr_db = label

@@ -19,20 +19,23 @@ seed = 42
 torch.manual_seed(seed)
 np.random.seed(seed)
 random.seed(seed)
-dataset = RadioSignal(Path('../datasets/radio_sig_identification'))
-splitter = StratifiedShuffleSplit(n_splits=1, train_size=0.8, test_size=0.2, random_state=seed)
-all_labels = [dataset[i][1] for i in range(len(dataset))]
+# dataset = RadioSignal(Path('../datasets/radio_sig_identification'))
+dataset_train = RadioSignal(Path('../datasets/radio_sig_identification_data_split/train'))
+dataset_test = RadioSignal(Path('../datasets/radio_sig_identification_data_split/test'))
 
-for train_idx, test_idx in splitter.split(range(len(dataset)), all_labels):
-    dataset_train = torch.utils.data.Subset(dataset, train_idx)
-    dataset_test = torch.utils.data.Subset(dataset, test_idx)
+# splitter = StratifiedShuffleSplit(n_splits=1, train_size=0.8, test_size=0.2, random_state=seed)
+# all_labels = [dataset[i][1] for i in range(len(dataset))]
+#
+# for train_idx, test_idx in splitter.split(range(len(dataset)), all_labels):
+#     dataset_train = torch.utils.data.Subset(dataset, train_idx)
+#     dataset_test = torch.utils.data.Subset(dataset, test_idx)
 
 dataloader_train = DataLoader(dataset_train, batch_size=256, shuffle=True, num_workers=0)
 dataloader_test = DataLoader(dataset_test, batch_size=256, shuffle=False, num_workers=0)
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-model = models_vit.__dict__['vit_small_patch16'](global_pool='token', num_classes=20, drop_path_rate=0.1, in_chans=1)
-checkpoint = torch.load(Path('checkpoints/checkpoint-200.pth'), map_location='cpu')
+model = models_vit.__dict__['vit_small_patch16'](global_pool='token', num_classes=20, drop_path_rate=0.1, in_chans=1, head_layers=2)
+checkpoint = torch.load(Path('output_dir_sig_identification_small_frozen_2layerhead/checkpoint-200.pth'), map_location='cpu')
 msg = model.load_state_dict(checkpoint['model'], strict=True)
 print(msg)
 model = model.to(device)
@@ -61,8 +64,7 @@ with torch.no_grad():
 
 conf_mat_train = confusion_matrix(all_labels_train, all_preds_train)
 conf_mat_test = confusion_matrix(all_labels_test, all_preds_test)
-accuracy_train = np.trace(conf_mat_train) / np.sum(conf_mat_train)
-accuracy_test = np.trace(conf_mat_test) / np.sum(conf_mat_test)
+
 
 conf_mat_train = conf_mat_train.astype(np.float32)
 conf_mat_test = conf_mat_test.astype(np.float32)
@@ -70,8 +72,11 @@ for i in range(len(class_names)):
     conf_mat_train[i] /= np.sum(conf_mat_train[i])
     conf_mat_test[i] /= np.sum(conf_mat_test[i])
 
+accuracy_train = np.mean(np.diagonal(conf_mat_train))
+accuracy_test = np.mean(np.diagonal(conf_mat_test))
+
 fig, axs = plt.subplots(1, 2, figsize=(10, 5))
-fig.suptitle('Finetuning ViT-S (linear layer only)')
+fig.suptitle('Finetuning frozen ViT-S + 2 Layer Head')
 sns.heatmap(conf_mat_train, cmap='Reds', yticklabels=class_names, ax=axs[0])
 sns.heatmap(conf_mat_test, cmap='Reds',  yticklabels=class_names, ax=axs[1])
 axs[0].tick_params(axis='y', labelsize=10)
@@ -81,4 +86,5 @@ axs[1].tick_params(axis='x', which='both', bottom=False, top=False, labelbottom=
 axs[0].set_title(f'Train - Accuracy: {accuracy_train:.2f}')
 axs[1].set_title(f'Test - Accuracy: {accuracy_test:.2f}')
 plt.tight_layout()
+# plt.savefig(Path('Figures/conf_mat_radio_identification.png'), dpi=400)
 plt.show()

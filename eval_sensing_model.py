@@ -13,6 +13,7 @@ import numpy as np
 
 
 def main(args):
+
     device = args.device
     ckpt_path = Path(args.ckpt_path)
     model_name = args.model_name

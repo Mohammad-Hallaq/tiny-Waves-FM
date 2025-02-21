@@ -27,7 +27,7 @@ def main(args):
     with torch.no_grad():
         ckpt = torch.load(ckpt_path, map_location=device)['model']
         model = getattr(models_segmentation, model_name)()
-        model.load_state_dict(ckpt, strict=False)
+        model.load_state_dict(ckpt, strict=True)
 
         model = model.to(device)
 

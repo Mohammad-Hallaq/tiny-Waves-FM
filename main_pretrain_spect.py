@@ -69,8 +69,8 @@ def get_args_parser():
                         help='epochs to warmup LR')
 
     # Dataset parameters
-    parser.add_argument('--data_path', default='', type=str,
-                        help='dataset path')
+    parser.add_argument('--data_path', default=[], type=str, nargs='+',
+                        help='dataset path(s)')
 
     parser.add_argument('--output_dir', default='./output_dir',
                         help='path where to save, empty for no saving')
@@ -117,13 +117,14 @@ def main(args):
     cudnn.benchmark = True
 
     # simple augmentation
+    # max_val = -0.5 min_val = -120.0 mu = 0.451 std = 0.043
     transform_train = transforms.Compose([
         transforms.functional.pil_to_tensor,
         transforms.Lambda(lambda x: 10 * torch.log10(x + 1e-12)),
-        transforms.Lambda(lambda x: (x + 155.8) / (-8.41 + 155.8)),
+        transforms.Lambda(lambda x: (x + 120) / (-0.5 + 120)),
         transforms.Resize((224, 224), antialias=True,
                           interpolation=torchvision.transforms.InterpolationMode.BICUBIC),  # Resize
-        transforms.Normalize(mean=[0.634], std=[0.0664])  # Normalize
+        transforms.Normalize(mean=[0.451], std=[0.043])  # Normalize
     ])
     dataset_train = SpectrogramImages(args.data_path, transform=transform_train)
     print(dataset_train)
