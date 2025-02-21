@@ -1,3 +1,8 @@
+"""
+Source: https://github.com/mnikitin/timm-vit-lora
+"""
+
+
 import torch
 from functools import partial
 from timm.models.vision_transformer import VisionTransformer
