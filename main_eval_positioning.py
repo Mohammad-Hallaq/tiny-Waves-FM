@@ -1,7 +1,7 @@
 from tqdm import tqdm
 
 import models_vit
-from dataset_classes.positioning_nr import PositioningNR
+from dataset_classes.positioning import Positioning5G
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
@@ -19,9 +19,9 @@ torch.manual_seed(seed)
 np.random.seed(seed)
 random.seed(seed)
 scene = 'outdoor'
-dataset = PositioningNR(Path('../datasets/5G_NR_Positioning'), scene=scene)
-dataset_train, dataset_test = random_split(dataset, [0.8, 0.2], generator=torch.Generator().manual_seed(seed))
-coord_min, coord_max = dataset.coord_nominal_min.view((1, -1)), dataset.coord_nominal_max.view((1, -1))
+dataset_train = Positioning5G(Path('../datasets/5G_NR_Positioning/outdoor/train'), scene=scene)
+dataset_test = Positioning5G(Path('../datasets/5G_NR_Positioning/outdoor/test'), scene=scene)
+coord_min, coord_max = dataset_train.coord_nominal_min.view((1, -1)), dataset_train.coord_nominal_max.view((1, -1))
 
 dataloader_train = DataLoader(dataset_train, batch_size=256, shuffle=False, num_workers=0)
 dataloader_test = DataLoader(dataset_test, batch_size=256, shuffle=False, num_workers=0)
@@ -29,7 +29,7 @@ dataloader_test = DataLoader(dataset_test, batch_size=256, shuffle=False, num_wo
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 # device = 'cpu'
 model = models_vit.__dict__['vit_small_patch16'](global_pool='token', num_classes=3, drop_path_rate=0.1, in_chans=4)
-checkpoint = torch.load(Path('checkpoints/positioning_small_75_token_2layers.pth'), map_location='cpu')
+checkpoint = torch.load(Path('output_dir_outdoor_small/checkpoint-70.pth'), map_location='cpu')
 msg = model.load_state_dict(checkpoint['model'], strict=True)
 print(msg)
 

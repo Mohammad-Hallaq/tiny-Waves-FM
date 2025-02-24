@@ -33,7 +33,7 @@ import models_vit
 import math
 
 from engine_finetune_regression import train_one_epoch, evaluate
-from dataset_classes.positioning_nr import PositioningNR
+from dataset_classes.positioning import Positioning5G
 
 
 def get_args_parser():
@@ -165,7 +165,7 @@ def main(args):
 
     cudnn.benchmark = True
 
-    dataset = PositioningNR(Path('../datasets/5G_NR_Positioning'), scene=args.scene)
+    dataset = Positioning5G(Path('../datasets/5G_NR_Positioning/outdoor/train'))
     dataset_train, dataset_val = random_split(dataset, [0.8, 0.2], generator=torch.Generator().manual_seed(seed))
 
     num_tasks = misc.get_world_size()
@@ -227,10 +227,11 @@ def main(args):
             if k in checkpoint_model and checkpoint_model[k].shape != state_dict[k].shape:
                 print(f"Removing key {k} from pretrained checkpoint")
                 del checkpoint_model[k]
-        if args.scene == 'outdoor':
-            checkpoint_model['patch_embed.proj.weight'] = checkpoint_model['patch_embed.proj.weight'].expand(-1, 4, -1, -1)
-        else:
-            checkpoint_model['patch_embed.proj.weight'] = checkpoint_model['patch_embed.proj.weight'].expand(-1, 5, -1, -1)
+        checkpoint_model['patch_embed.proj.weight'] = checkpoint_model['patch_embed.proj.weight'][:, :4, :, :]
+        # if args.scene == 'outdoor':
+        #     checkpoint_model['patch_embed.proj.weight'] = checkpoint_model['patch_embed.proj.weight'].expand(-1, 4, -1, -1)
+        # else:
+        #     checkpoint_model['patch_embed.proj.weight'] = checkpoint_model['patch_embed.proj.weight'].expand(-1, 5, -1, -1)
 
         # load pre-trained model
         msg = model.load_state_dict(checkpoint_model, strict=False)
