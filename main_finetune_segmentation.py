@@ -26,7 +26,7 @@ from timm.loss import LabelSmoothingCrossEntropy
 import util.lr_decay as lrd
 import util.misc as misc
 from util.misc import NativeScalerWithGradNormCount as NativeScaler
-
+from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 import models_segmentation
 
 from engine_finetune_segmentation import train_one_epoch, evaluate
@@ -73,10 +73,6 @@ def get_args_parser():
                         help='epochs to warmup LR')
 
     # Augmentation parameters
-    parser.add_argument('--color_jitter', type=float, default=None, metavar='PCT',
-                        help='Color jitter factor (enabled only when not using Auto/RandAug)')
-    parser.add_argument('--aa', type=str, default='rand-m9-mstd0.5-inc1', metavar='NAME',
-                        help='Use AutoAugment policy. "v0" or "original". " + "(default: rand-m9-mstd0.5-inc1)'),
     parser.add_argument('--smoothing', type=float, default=0,
                         help='Label smoothing (default: 0)')
 
@@ -126,10 +122,6 @@ def get_args_parser():
 
     parser.add_argument('--start_epoch', default=0, type=int, metavar='N',
                         help='start epoch')
-    parser.add_argument('--eval', action='store_true',
-                        help='Perform evaluation only')
-    parser.add_argument('--dist_eval', action='store_true', default=False,
-                        help='Enabling distributed evaluation (recommended during training for faster monitor')
     parser.add_argument('--num_workers', default=10, type=int)
     parser.add_argument('--pin_mem', action='store_true',
                         help='Pin CPU memory in DataLoader for more efficient (sometimes) transfer to GPU.')
@@ -138,11 +130,13 @@ def get_args_parser():
 
     # distributed training parameters
     parser.add_argument('--world_size', default=1, type=int,
-                        help='number of distributed processes')
-    parser.add_argument('--local_rank', default=-1, type=int)
-    parser.add_argument('--dist_on_itp', action='store_true')
+                        help=argparse.SUPPRESS)
+    parser.add_argument('--local_rank', default=-1, type=int,
+                        help=argparse.SUPPRESS)
+    parser.add_argument('--dist_on_itp', action='store_true',
+                        help=argparse.SUPPRESS)
     parser.add_argument('--dist_url', default='env://',
-                        help='url used to set up distributed training')
+                        help=argparse.SUPPRESS)
 
     return parser
 
@@ -156,42 +150,21 @@ def main(args):
     device = torch.device(args.device)
 
     # fix the seed for reproducibility
-    seed = args.seed + misc.get_rank()
+    seed = 42
     torch.manual_seed(seed)
     np.random.seed(seed)
 
     cudnn.benchmark = True
-    dataset_train = SegmentationDataset(dataset_dir=Path('../datasets/SegmentationData/Train/LTE_NR'))
-    dataset_val = SegmentationDataset(dataset_dir=Path('../datasets/SegmentationData/Test/LTE_NR'))
+    dataset_train = SegmentationDataset(dataset_dir=os.path.join(args.data_path, 'train/LTE_NR'))
+    dataset_val = SegmentationDataset(dataset_dir=os.path.join(args.data_path, 'val/LTE_NR'))
 
+    sampler_train = RandomSampler(dataset_train)
+    sampler_val = SequentialSampler(dataset_val)
 
-    # if True:  # args.distributed:
-    num_tasks = misc.get_world_size()
-    global_rank = misc.get_rank()
-    sampler_train = torch.utils.data.DistributedSampler(
-        dataset_train, num_replicas=num_tasks, rank=global_rank, shuffle=True
-    )
-    print("Sampler_train = %s" % str(sampler_train))
-    if args.dist_eval:
-        if len(dataset_val) % num_tasks != 0:
-            print('Warning: Enabling distributed evaluation with an eval dataset not divisible by process number. '
-                  'This will slightly alter validation results as extra duplicate entries are added to achieve '
-                  'equal num of samples per-process.')
-        sampler_val = torch.utils.data.DistributedSampler(
-            dataset_val, num_replicas=num_tasks, rank=global_rank, shuffle=True)  # shuffle=True to reduce monitor bias
-    else:
-        sampler_val = torch.utils.data.SequentialSampler(dataset_val)
-    # else:
-    #     sampler_train = torch.utils.data.RandomSampler(dataset_train)
-    #     sampler_val = torch.utils.data.SequentialSampler(dataset_val)
+    os.makedirs(args.log_dir, exist_ok=True)
+    log_writer = SummaryWriter(log_dir=args.log_dir)
 
-    if global_rank == 0 and args.log_dir is not None and not args.eval:
-        os.makedirs(args.log_dir, exist_ok=True)
-        log_writer = SummaryWriter(log_dir=args.log_dir)
-    else:
-        log_writer = None
-
-    data_loader_train = torch.utils.data.DataLoader(
+    data_loader_train = DataLoader(
         dataset_train, sampler=sampler_train,
         batch_size=args.batch_size,
         num_workers=args.num_workers,
@@ -199,7 +172,7 @@ def main(args):
         drop_last=True,
     )
 
-    data_loader_val = torch.utils.data.DataLoader(
+    data_loader_val = DataLoader(
         dataset_val, sampler=sampler_val,
         batch_size=args.batch_size,
         num_workers=args.num_workers,
@@ -207,18 +180,14 @@ def main(args):
         drop_last=False
     )
 
-    # mixup_fn = None
-    # mixup_active = args.mixup > 0 or args.cutmix > 0. or args.cutmix_minmax is not None
-    # if mixup_active:
-    #     print("Mixup is activated!")
-    #     mixup_fn = Mixup(
-    #         mixup_alpha=args.mixup, cutmix_alpha=args.cutmix, cutmix_minmax=args.cutmix_minmax,
-    #         prob=args.mixup_prob, switch_prob=args.mixup_switch_prob, mode=args.mixup_mode,
-    #         label_smoothing=args.smoothing, num_classes=args.nb_classes)
-    
     model = models_segmentation.__dict__[args.model]()
-
-    if args.finetune and not args.eval:
+    if args.resume:
+        checkpoint = torch.load(args.resume, map_location='cpu')
+        print("Load pre-trained checkpoint from: %s" % args.resume)
+        checkpoint_model = checkpoint['model']
+        msg = model.load_state_dict(checkpoint_model, strict=True)
+        print(msg)
+    elif args.finetune:
         checkpoint = torch.load(args.finetune, map_location='cpu')
 
         print("Load pre-trained checkpoint from: %s" % args.finetune)
@@ -226,7 +195,6 @@ def main(args):
         del checkpoint_model['decoder_pred.weight']
         del checkpoint_model['decoder_pred.bias']
         del checkpoint_model['mask_token']
-
         # load pre-trained model
         msg = model.load_state_dict(checkpoint_model, strict=False)
         print(msg)
@@ -251,10 +219,6 @@ def main(args):
     print("accumulate grad iterations: %d" % args.accum_iter)
     print("effective batch size: %d" % eff_batch_size)
 
-    if args.distributed:
-        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu])
-        model_without_ddp = model.module
-
     # build optimizer with layer-wise lr decay (lrd)
     param_groups = lrd.param_groups_lrd(model_without_ddp, args.weight_decay, layer_decay=args.layer_decay)
     optimizer = torch.optim.AdamW(param_groups, lr=args.lr)
@@ -269,17 +233,10 @@ def main(args):
 
     misc.load_model(args=args, model_without_ddp=model_without_ddp, optimizer=optimizer, loss_scaler=loss_scaler)
 
-    if args.eval:
-        test_stats = evaluate(data_loader_val, model, criterion, device)
-        print(f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
-        exit(0)
-
     print(f"Start training for {args.epochs} epochs")
     start_time = time.time()
     max_accuracy = 0.0
     for epoch in range(args.start_epoch, args.epochs):
-        if args.distributed:
-            data_loader_train.sampler.set_epoch(epoch)
         train_stats = train_one_epoch(
             model, criterion, data_loader_train,
             optimizer, device, epoch, loss_scaler,
@@ -292,7 +249,7 @@ def main(args):
                 args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
                 loss_scaler=loss_scaler, epoch=epoch)
 
-        test_stats = evaluate(data_loader_val, model, device)
+        test_stats = evaluate(data_loader_val, model, criterion, device)
         print(f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
         max_accuracy = max(max_accuracy, test_stats["acc1"])
         print(f'Max accuracy: {max_accuracy:.2f}%')
@@ -306,7 +263,7 @@ def main(args):
                      'epoch': epoch,
                      'n_parameters': n_parameters}
 
-        if args.output_dir and misc.is_main_process():
+        if args.output_dir:
             if log_writer is not None:
                 log_writer.flush()
             with open(os.path.join(args.output_dir, "log.txt"), mode="a", encoding="utf-8") as f:
