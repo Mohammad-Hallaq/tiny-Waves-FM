@@ -42,6 +42,6 @@ class CSI5G(Dataset):
 
     def __len__(self):
         if self.augment_transforms:
-            return 3.5 * len(self.file_list)
+            return int(3.5 * len(self.file_list))
         else:
             return len(self.file_list)
