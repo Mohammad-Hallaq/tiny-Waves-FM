@@ -74,6 +74,8 @@ def get_args_parser():
                         help='dataset path(s)')
     parser.add_argument('--augmentation', action='store_true', default=False,
                         help='apply data augmentation')
+    parser.add_argument('--csi_subsampling', action='store_true', default=False,
+                        help='Use half batch size for CSI data')
     parser.add_argument('--output_dir', default='./output_dir',
                         help='path where to save, empty for no saving')
     parser.add_argument('--log_dir', default='./output_dir',
@@ -152,24 +154,36 @@ def main(args):
         batch_size=args.batch_size,
         num_workers=args.num_workers,
         pin_memory=args.pin_mem,
-        drop_last=True,
-    )
+        drop_last=True)
 
-    data_loader_train_two = DataLoader(
-        dataset_train_two, sampler=sampler_train_two,
-        batch_size=args.batch_size,
-        num_workers=args.num_workers,
-        pin_memory=args.pin_mem,
-        drop_last=True,
-    )
+    if args.csi_subsampling:
+        data_loader_train_two = DataLoader(
+            dataset_train_two, sampler=sampler_train_two,
+            batch_size=args.batch_size // 2,
+            num_workers=args.num_workers,
+            pin_memory=args.pin_mem,
+            drop_last=True)
 
-    data_loader_train_three = DataLoader(
-        dataset_train_three, sampler=sampler_train_three,
-        batch_size=args.batch_size,
-        num_workers=args.num_workers,
-        pin_memory=args.pin_mem,
-        drop_last=True,
-    )
+        data_loader_train_three = DataLoader(
+            dataset_train_three, sampler=sampler_train_three,
+            batch_size=args.batch_size // 2,
+            num_workers=args.num_workers,
+            pin_memory=args.pin_mem,
+            drop_last=True)
+    else:
+        data_loader_train_two = DataLoader(
+            dataset_train_two, sampler=sampler_train_two,
+            batch_size=args.batch_size // 2,
+            num_workers=args.num_workers,
+            pin_memory=args.pin_mem,
+            drop_last=True)
+
+        data_loader_train_three = DataLoader(
+            dataset_train_three, sampler=sampler_train_three,
+            batch_size=args.batch_size // 2,
+            num_workers=args.num_workers,
+            pin_memory=args.pin_mem,
+            drop_last=True)
 
     # define the model
     model = models_mae_hetero.__dict__[args.model](norm_pix_loss=False, in_chans=[1, 3, 4])

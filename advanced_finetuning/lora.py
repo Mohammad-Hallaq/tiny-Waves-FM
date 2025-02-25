@@ -53,20 +53,4 @@ def create_lora_model(model: VisionTransformer, lora_rank=8, lora_alpha=1.0):
     assign_lora = partial(QkvWithLoRA, rank=lora_rank, alpha=lora_alpha)
     for block in model.blocks:
         block.attn.qkv = assign_lora(block.attn.qkv)
-
-    # Freeze all params
-    for param in model.blocks.parameters():
-        param.requires_grad = False
-
-    # Unfreeze LoRA layers
-    for block in model.blocks:
-        for param in block.attn.qkv.lora_q.parameters():
-            param.requires_grad = True
-        for param in block.attn.qkv.lora_v.parameters():
-            param.requires_grad = True
-
-    # Unfreeze classifier layer
-    for param in model.head.parameters():
-        param.requires_grad = True
-
     return model

@@ -173,6 +173,10 @@ class CEViT(nn.Module):
         for param in self.patch_embed.proj.parameters():
             param.requires_grad = False
 
+    def unfreeze_patch_embed(self):
+        for param in self.patch_embed.parameters():
+            param.requires_grad = True
+
 
 def ce_small_patch16_dec512d8b(**kwargs):
     model = CEViT(

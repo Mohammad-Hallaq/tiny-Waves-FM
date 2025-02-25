@@ -31,6 +31,10 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
         layers.append(nn.Linear(self.embed_dim, num_classes))
         self.head = nn.Sequential(*layers) if head_layers > 1 else nn.Linear(self.embed_dim, num_classes)
 
+    def unfreeze_patch_embed(self):
+        for param in self.patch_embed.parameters():
+            param.requires_grad = True
+
     def freeze_encoder(self, num_blocks=None):
         if num_blocks is None:
             for param in self.blocks.parameters():
@@ -41,6 +45,22 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
 
         for param in self.patch_embed.proj.parameters():
             param.requires_grad = False
+
+    def freeze_encoder_lora(self):
+        # Freeze all params
+        for param in self.blocks.parameters():
+            param.requires_grad = False
+
+        # Unfreeze LoRA layers
+        for block in self.blocks:
+            for param in block.attn.qkv.lora_q.parameters():
+                param.requires_grad = True
+            for param in block.attn.qkv.lora_v.parameters():
+                param.requires_grad = True
+
+        # Unfreeze classifier layer
+        for param in self.head.parameters():
+            param.requires_grad = True
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.forward_features(x)

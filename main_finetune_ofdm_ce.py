@@ -27,7 +27,7 @@ from torch.utils.data import random_split
 import util.lr_decay as lrd
 import util.misc as misc
 from util.misc import NativeScalerWithGradNormCount as NativeScaler
-from timm.data.mixup import Mixup
+from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 
 import models_ofdm_ce
 import math
@@ -42,7 +42,8 @@ def get_args_parser():
                         help='Batch size per GPU (effective batch size is batch_size * accum_iter * # gpus')
     parser.add_argument('--epochs', default=50, type=int)
     parser.add_argument('--accum_iter', default=1, type=int,
-                        help='Accumulate gradient iterations (for increasing the effective batch size under memory constraints)')
+                        help='Accumulate gradient iterations '
+                             '(for increasing the effective batch size under memory constraints)')
     # Model parameters
     parser.add_argument('--model', default='ce_large_patch16', type=str, metavar='MODEL',
                         help='Name of model to train')
@@ -53,7 +54,8 @@ def get_args_parser():
     parser.add_argument('--drop_path', type=float, default=0.1, metavar='PCT',
                         help='Drop path rate (default: 0.1)')
     parser.add_argument('--frozen_blocks', type=int, help='number of encoder blocks to freeze. Freezes all by default')
-    parser.add_argument('--normalize_labels', action='store_true', default=False, help='normalize labels before training')
+    parser.add_argument('--normalize_labels', action='store_true', default=False,
+                        help='normalize labels before training')
     # Optimizer parameters
     parser.add_argument('--clip_grad', type=float, default=None, metavar='NORM',
                         help='Clip gradient norm (default: None, no clipping)')
@@ -74,36 +76,7 @@ def get_args_parser():
                         help='epochs to warmup LR')
     parser.add_argument('--loss', default='mse', type=str)
     parser.add_argument('--weighted_loss', action='store_true', default=False, help='use weighted loss')
-    parser.add_argument('--loss_mode', default='linear', help='weighted loss mode'
-                        )
-    # Augmentation parameters
-    parser.add_argument('--color_jitter', type=float, default=None, metavar='PCT',
-                        help='Color jitter factor (enabled only when not using Auto/RandAug)')
-    parser.add_argument('--aa', type=str, default='rand-m9-mstd0.5-inc1', metavar='NAME',
-                        help='Use AutoAugment policy. "v0" or "original". " + "(default: rand-m9-mstd0.5-inc1)'),
-    # * Random Erase params
-    parser.add_argument('--reprob', type=float, default=0.25, metavar='PCT',
-                        help='Random erase prob (default: 0.25)')
-    parser.add_argument('--remode', type=str, default='pixel',
-                        help='Random erase mode (default: "pixel")')
-    parser.add_argument('--recount', type=int, default=1,
-                        help='Random erase count (default: 1)')
-    parser.add_argument('--resplit', action='store_true', default=False,
-                        help='Do not random erase first (clean) augmentation split')
-
-    # * Mixup params
-    parser.add_argument('--mixup', type=float, default=0,
-                        help='mixup alpha, mixup enabled if > 0.')
-    parser.add_argument('--cutmix', type=float, default=0,
-                        help='cutmix alpha, cutmix enabled if > 0.')
-    parser.add_argument('--cutmix_minmax', type=float, nargs='+', default=None,
-                        help='cutmix min/max ratio, overrides alpha and enables cutmix if set (default: None)')
-    parser.add_argument('--mixup_prob', type=float, default=1.0,
-                        help='Probability of performing mixup or cutmix when either/both is enabled')
-    parser.add_argument('--mixup_switch_prob', type=float, default=0.5,
-                        help='Probability of switching to cutmix when both mixup and cutmix enabled')
-    parser.add_argument('--mixup_mode', type=str, default='batch',
-                        help='How to apply mixup/cutmix params. Per "batch", "pair", or "elem"')
+    parser.add_argument('--loss_mode', default='linear', help='weighted loss mode')
 
     # * Finetuning params
     parser.add_argument('--finetune', default='',
@@ -140,11 +113,13 @@ def get_args_parser():
 
     # distributed training parameters
     parser.add_argument('--world_size', default=1, type=int,
-                        help='number of distributed processes')
-    parser.add_argument('--local_rank', default=-1, type=int)
-    parser.add_argument('--dist_on_itp', action='store_true')
+                        help=argparse.SUPPRESS)
+    parser.add_argument('--local_rank', default=-1, type=int,
+                        help=argparse.SUPPRESS)
+    parser.add_argument('--dist_on_itp', action='store_true',
+                        help=argparse.SUPPRESS)
     parser.add_argument('--dist_url', default='env://',
-                        help='url used to set up distributed training')
+                        help=argparse.SUPPRESS)
 
     return parser
 
@@ -166,34 +141,18 @@ def main(args):
 
     cudnn.benchmark = True
 
-    dataset_train = OfdmChannelEstimation(os.path.join(Path(args.data_path), 'val'), normalize_labels=args.normalize_labels)
+    dataset_train = OfdmChannelEstimation(os.path.join(Path(args.data_path), 'train'), normalize_labels=args.normalize_labels)
     dataset_val = OfdmChannelEstimation(Path(args.data_path, 'val'), normalize_labels=args.normalize_labels)
 
     # dataset_train, dataset_val = random_split(dataset, [0.75, 0.25], generator=torch.Generator().manual_seed(seed))
 
-    num_tasks = misc.get_world_size()
-    global_rank = misc.get_rank()
-    sampler_train = torch.utils.data.DistributedSampler(
-        dataset_train, num_replicas=num_tasks, rank=global_rank, shuffle=True
-    )
-    print("Sampler_train = %s" % str(sampler_train))
-    if args.dist_eval:
-        if len(dataset_val) % num_tasks != 0:
-            print('Warning: Enabling distributed evaluation with an eval dataset not divisible by process number. '
-                  'This will slightly alter validation results as extra duplicate entries are added to achieve '
-                  'equal num of samples per-process.')
-        sampler_val = torch.utils.data.DistributedSampler(
-            dataset_val, num_replicas=num_tasks, rank=global_rank, shuffle=True)  # shuffle=True to reduce monitor bias
-    else:
-        sampler_val = torch.utils.data.SequentialSampler(dataset_val)
+    sampler_train = RandomSampler(dataset_train)
+    sampler_val = SequentialSampler(dataset_val)
 
-    if global_rank == 0 and args.log_dir is not None and not args.eval:
-        os.makedirs(args.log_dir, exist_ok=True)
-        log_writer = SummaryWriter(log_dir=args.log_dir)
-    else:
-        log_writer = None
+    os.makedirs(args.log_dir, exist_ok=True)
+    log_writer = SummaryWriter(log_dir=args.log_dir)
 
-    data_loader_train = torch.utils.data.DataLoader(
+    data_loader_train = DataLoader(
         dataset_train, sampler=sampler_train,
         batch_size=args.batch_size,
         num_workers=args.num_workers,
@@ -201,7 +160,7 @@ def main(args):
         drop_last=True,
     )
 
-    data_loader_val = torch.utils.data.DataLoader(
+    data_loader_val = DataLoader(
         dataset_val, sampler=sampler_val,
         batch_size=args.batch_size,
         num_workers=args.num_workers,
@@ -209,44 +168,43 @@ def main(args):
         drop_last=False
     )
 
-
     model = models_ofdm_ce.__dict__[args.model]()
-    #
-    # if args.resume:
-    #     checkpoint = torch.load(args.resume, map_location='cpu')
-    #     print("Load pre-trained checkpoint from: %s" % args.resume)
-    #     checkpoint_model = checkpoint['model']
-    #     msg = model.load_state_dict(checkpoint_model, strict=False)
-    #     print(msg)
 
-    if args.finetune and not args.eval:
+    if args.resume:
+        checkpoint = torch.load(args.resume, map_location='cpu')
+        print("Load pre-trained checkpoint from: %s" % args.resume)
+        checkpoint_model = checkpoint['model']
+        msg = model.load_state_dict(checkpoint_model, strict=True)
+        print(msg)
+
+    elif args.finetune:
         checkpoint = torch.load(args.finetune, map_location='cpu')
         print("Load pre-trained checkpoint from: %s" % args.finetune)
         checkpoint_model = checkpoint['model']
         state_dict = model.state_dict()
-        for k in ['head.weight', 'head.bias', 'pos_embed', 'decoder_pred.weight', 'decoder_pred.bias']:
+        for k in ['head.weight', 'head.bias', 'pos_embed', 'decoder_pred.weight', 'decoder_pred.bias',
+                  'patch_embed.proj.weight', 'patch_embed.proj.bias']:
             if k in checkpoint_model and checkpoint_model[k].shape != state_dict[k].shape:
                 print(f"Removing key {k} from pretrained checkpoint")
                 del checkpoint_model[k]
-        checkpoint_model['patch_embed.proj.weight'] = checkpoint_model['patch_embed.proj.weight'].expand(-1, 2, -1, -1)
-
         # load pre-trained model
         msg = model.load_state_dict(checkpoint_model, strict=False)
         print(msg)
 
-    if args.frozen_blocks is not None:
+    if args.frozen_blocks:
         model.freeze_encoder(args.frozen_blocks)
     else:
         model.freeze_encoder()
-    model.to(device)
 
+    model.unfreeze_patch_embed()
+    model = model.to(device)
     model_without_ddp = model
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
 
     print("Model = %s" % str(model_without_ddp))
     print('number of params (M): %.2f' % (n_parameters / 1.e6))
 
-    eff_batch_size = args.batch_size * args.accum_iter * misc.get_world_size()
+    eff_batch_size = args.batch_size * args.accum_iter
     
     if args.lr is None:  # only base_lr is specified
         args.lr = args.blr * eff_batch_size / 256
@@ -257,10 +215,6 @@ def main(args):
     print("accumulate grad iterations: %d" % args.accum_iter)
     print("effective batch size: %d" % eff_batch_size)
 
-    if args.distributed:
-        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu])
-        model_without_ddp = model.module
-
     # build optimizer with layer-wise lr decay (lrd)
     param_groups = lrd.param_groups_lrd(model_without_ddp, args.weight_decay, layer_decay=args.layer_decay)
     optimizer = torch.optim.AdamW(param_groups, lr=args.lr)
@@ -268,26 +222,19 @@ def main(args):
 
     if args.weighted_loss:
         criterion = WeightedLoss(args.loss, args.loss_mode)
-    elif args.loss == 'mse':
-        criterion = MSELoss()
     elif args.loss == 'mae':
         criterion = L1Loss()
+    else:
+        criterion = MSELoss()
 
     print("criterion = %s" % str(criterion))
 
     misc.load_model(args=args, model_without_ddp=model_without_ddp, optimizer=optimizer, loss_scaler=loss_scaler)
 
-    if args.eval:
-        test_stats = evaluate(data_loader_val, model, device)
-        print(f"Error of the network on the {len(dataset_val)} test images: {test_stats['loss']:.4f}")
-        exit(0)
-
     print(f"Start training for {args.epochs} epochs")
     start_time = time.time()
     min_error = math.inf
     for epoch in range(args.start_epoch, args.epochs):
-        if args.distributed:
-            data_loader_train.sampler.set_epoch(epoch)
         train_stats = train_one_epoch(
             model, criterion, data_loader_train,
             optimizer, device, epoch, loss_scaler,
@@ -295,7 +242,7 @@ def main(args):
             log_writer=log_writer,
             args=args
         )
-        if args.output_dir and epoch % 5 == 0:
+        if args.output_dir and epoch % 10 == 0:
             misc.save_model(
                 args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
                 loss_scaler=loss_scaler, epoch=epoch)
@@ -313,7 +260,7 @@ def main(args):
                      'epoch': epoch,
                      'n_parameters': n_parameters}
 
-        if args.output_dir and misc.is_main_process():
+        if args.output_dir:
             if log_writer is not None:
                 log_writer.flush()
             with open(os.path.join(args.output_dir, "log.txt"), mode="a", encoding="utf-8") as f:

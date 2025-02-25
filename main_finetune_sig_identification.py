@@ -28,6 +28,8 @@ from timm.layers import trunc_normal_
 from timm.loss import LabelSmoothingCrossEntropy, SoftTargetCrossEntropy
 from timm.data.mixup import Mixup
 from sklearn.model_selection import StratifiedShuffleSplit
+from torch.utils.data import DataLoader, RandomSampler, SequentialSampler, Subset
+from advanced_finetuning.lora import create_lora_model
 
 import models_vit
 
@@ -41,7 +43,8 @@ def get_args_parser():
                         help='Batch size per GPU (effective batch size is batch_size * accum_iter * # gpus')
     parser.add_argument('--epochs', default=50, type=int)
     parser.add_argument('--accum_iter', default=1, type=int,
-                        help='Accumulate gradient iterations (for increasing the effective batch size under memory constraints)')
+                        help='Accumulate gradient iterations '
+                             '(for increasing the effective batch size under memory constraints)')
 
     # Model parameters
     parser.add_argument('--model', default='vit_large_patch16', type=str, metavar='MODEL',
@@ -56,6 +59,12 @@ def get_args_parser():
                         help='Drop path rate (default: 0.1)')
     parser.add_argument('--frozen_blocks', type=int, help='number of encoder blocks to freeze. '
                                                           'Freezes all by default')
+    # LoRa Parameters
+    parser.add_argument('--lora', action='store_true', help='Whether to use LoRa (default: False)')
+
+    parser.add_argument('--lora_rank', type=int, default=8, help='Rank of LoRa (default: 8)')
+
+    parser.add_argument('--lora_alpha', type=float, default=1, help='Alpha for LoRa (default: 0.5)')
 
     # Optimizer parameters
     parser.add_argument('--clip_grad', type=float, default=None, metavar='NORM',
@@ -77,10 +86,6 @@ def get_args_parser():
                         help='epochs to warmup LR')
 
     # Augmentation parameters
-    parser.add_argument('--color_jitter', type=float, default=None, metavar='PCT',
-                        help='Color jitter factor (enabled only when not using Auto/RandAug)')
-    parser.add_argument('--aa', type=str, default='rand-m9-mstd0.5-inc1', metavar='NAME',
-                        help='Use AutoAugment policy. "v0" or "original". " + "(default: rand-m9-mstd0.5-inc1)'),
     parser.add_argument('--smoothing', type=float, default=0,
                         help='Label smoothing (default: 0)')
 
@@ -131,10 +136,6 @@ def get_args_parser():
 
     parser.add_argument('--start_epoch', default=0, type=int, metavar='N',
                         help='start epoch')
-    parser.add_argument('--eval', action='store_true',
-                        help='Perform evaluation only')
-    parser.add_argument('--dist_eval', action='store_true', default=False,
-                        help='Enabling distributed evaluation (recommended during training for faster monitor')
     parser.add_argument('--num_workers', default=10, type=int)
     parser.add_argument('--pin_mem', action='store_true',
                         help='Pin CPU memory in DataLoader for more efficient (sometimes) transfer to GPU.')
@@ -143,11 +144,12 @@ def get_args_parser():
 
     # distributed training parameters
     parser.add_argument('--world_size', default=1, type=int,
-                        help='number of distributed processes')
-    parser.add_argument('--local_rank', default=-1, type=int)
-    parser.add_argument('--dist_on_itp', action='store_true')
+                        help=argparse.SUPPRESS)
+    parser.add_argument('--local_rank', default=-1, type=int,
+                        help=argparse.SUPPRESS)
+    parser.add_argument('--dist_on_itp', action='store_true', help=argparse.SUPPRESS)
     parser.add_argument('--dist_url', default='env://',
-                        help='url used to set up distributed training')
+                        help=argparse.SUPPRESS)
     return parser
 
 
@@ -166,38 +168,24 @@ def main(args):
 
     cudnn.benchmark = True
 
-    dataset = RadioSignal(Path('../datasets/radio_sig_identification_data_split/train'))
-    print(dataset.data_path)
-    splitter = StratifiedShuffleSplit(n_splits=1, train_size=0.9, test_size=0.1, random_state=seed)
-    all_labels = [dataset[i][1] for i in range(len(dataset))]
+    dataset_train = RadioSignal(os.path.join(args.data_path, 'train'))
+    dataset_val = RadioSignal(os.path.join(args.data_path, 'test'))
 
-    for train_idx, test_idx in splitter.split(range(len(dataset)), all_labels):
-        dataset_train = torch.utils.data.Subset(dataset, train_idx)
-        dataset_val = torch.utils.data.Subset(dataset, test_idx)
+    # print(dataset.data_path)
+    # splitter = StratifiedShuffleSplit(n_splits=1, train_size=0.9, test_size=0.1, random_state=seed)
+    # all_labels = [dataset[i][1] for i in range(len(dataset))]
 
-    num_tasks = misc.get_world_size()
-    global_rank = misc.get_rank()
-    sampler_train = torch.utils.data.DistributedSampler(
-        dataset_train, num_replicas=num_tasks, rank=global_rank, shuffle=True
-    )
-    print("Sampler_train = %s" % str(sampler_train))
-    if args.dist_eval:
-        if len(dataset_val) % num_tasks != 0:
-            print('Warning: Enabling distributed evaluation with an eval dataset not divisible by process number. '
-                  'This will slightly alter validation results as extra duplicate entries are added to achieve '
-                  'equal num of samples per-process.')
-        sampler_val = torch.utils.data.DistributedSampler(
-            dataset_val, num_replicas=num_tasks, rank=global_rank, shuffle=True)  # shuffle=True to reduce monitor bias
-    else:
-        sampler_val = torch.utils.data.SequentialSampler(dataset_val)
+    # for train_idx, test_idx in splitter.split(range(len(dataset)), all_labels):
+    #     dataset_train = Subset(dataset, train_idx)
+    #     dataset_val = Subset(dataset, test_idx)
 
-    if global_rank == 0 and args.log_dir is not None and not args.eval:
-        os.makedirs(args.log_dir, exist_ok=True)
-        log_writer = SummaryWriter(log_dir=args.log_dir)
-    else:
-        log_writer = None
+    sampler_train = RandomSampler(dataset_train)
+    sampler_val = SequentialSampler(dataset_val)
 
-    data_loader_train = torch.utils.data.DataLoader(
+    os.makedirs(args.log_dir, exist_ok=True)
+    log_writer = SummaryWriter(log_dir=args.log_dir)
+
+    data_loader_train = DataLoader(
         dataset_train, sampler=sampler_train,
         batch_size=args.batch_size,
         num_workers=args.num_workers,
@@ -205,7 +193,7 @@ def main(args):
         drop_last=True,
     )
 
-    data_loader_val = torch.utils.data.DataLoader(
+    data_loader_val = DataLoader(
         dataset_val, sampler=sampler_val,
         batch_size=args.batch_size,
         num_workers=args.num_workers,
@@ -226,36 +214,47 @@ def main(args):
     model = models_vit.__dict__[args.model](global_pool=args.global_pool, num_classes=args.nb_classes,
                                             drop_path_rate=args.drop_path, in_chans=1, head_layers=args.head_layers)
 
-    if args.finetune and not args.eval:
-        checkpoint = torch.load(args.finetune, map_location='cpu')
+    if args.resume:
+        checkpoint = torch.load(args.resume, map_location='cpu')
+        print("Load pre-trained checkpoint from: %s" % args.resume)
+        checkpoint_model = checkpoint['model']
+        msg = model.load_state_dict(checkpoint_model, strict=True)
+        print(msg)
 
+    elif args.finetune:
+        checkpoint = torch.load(args.finetune, map_location='cpu')
         print("Load pre-trained checkpoint from: %s" % args.finetune)
         checkpoint_model = checkpoint['model']
         state_dict = model.state_dict()
-        for k in ['head.weight', 'head.bias']:
+        for k in ['head.weight', 'head.bias', 'pos_embed', 'patch_embed.proj.weight', 'patch_embed.proj.bias']:
             if k in checkpoint_model and checkpoint_model[k].shape != state_dict[k].shape:
                 print(f"Removing key {k} from pretrained checkpoint")
                 del checkpoint_model[k]
-
         # load pre-trained model
         msg = model.load_state_dict(checkpoint_model, strict=False)
         print(msg)
         # manually initialize fc layer
-        # trunc_normal_(model.head.weight, std=2e-5)
+        if args.head_layers == 1:
+            trunc_normal_(model.head.weight, std=2e-5)
+        if args.lora:
+            model = create_lora_model(model, args.lora_rank, args.lora_alpha)
 
-    if args.frozen_blocks is not None:
+    if args.lora:
+        model.freeze_encoder_lora()
+    elif args.frozen_blocks:
         model.freeze_encoder(args.frozen_blocks)
     else:
         model.freeze_encoder()
-    model.to(device)
 
+    model.unfreeze_patch_embed()
+    model = model.to(device)
     model_without_ddp = model
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
 
     print("Model = %s" % str(model_without_ddp))
     print('number of params (M): %.2f' % (n_parameters / 1.e6))
 
-    eff_batch_size = args.batch_size * args.accum_iter * misc.get_world_size()
+    eff_batch_size = args.batch_size * args.accum_iter
     
     if args.lr is None:  # only base_lr is specified
         args.lr = args.blr * eff_batch_size / 256
@@ -266,15 +265,11 @@ def main(args):
     print("accumulate grad iterations: %d" % args.accum_iter)
     print("effective batch size: %d" % eff_batch_size)
 
-    if args.distributed:
-        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu])
-        model_without_ddp = model.module
-
     # build optimizer with layer-wise lr decay (lrd)
     param_groups = lrd.param_groups_lrd(model_without_ddp, args.weight_decay, layer_decay=args.layer_decay)
     optimizer = torch.optim.AdamW(param_groups, lr=args.lr)
     loss_scaler = NativeScaler()
-    class_weights = dataset.class_weights.to(device)
+    class_weights = dataset_train.class_weights.to(device)
 
     if mixup_fn is not None:
         # smoothing is handled with mixup label transform
@@ -288,17 +283,10 @@ def main(args):
 
     misc.load_model(args=args, model_without_ddp=model_without_ddp, optimizer=optimizer, loss_scaler=loss_scaler)
 
-    if args.eval:
-        test_stats = evaluate(data_loader_val, model, criterion, device)
-        print(f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.3f}%")
-        exit(0)
-
     print(f"Start training for {args.epochs} epochs")
     start_time = time.time()
     max_accuracy = 0.0
     for epoch in range(args.start_epoch, args.epochs):
-        if args.distributed:
-            data_loader_train.sampler.set_epoch(epoch)
         train_stats = train_one_epoch(
             model, criterion, data_loader_train,
             optimizer, device, epoch, loss_scaler,
@@ -326,7 +314,7 @@ def main(args):
                      'epoch': epoch,
                      'n_parameters': n_parameters}
 
-        if args.output_dir and misc.is_main_process():
+        if args.output_dir:
             if log_writer is not None:
                 log_writer.flush()
             with open(os.path.join(args.output_dir, "log.txt"), mode="a", encoding="utf-8") as f:
