@@ -17,7 +17,7 @@ def main(args):
     ckpt_dir = Path(args.ckpt_dir)
     data_dir = Path(args.data_dir)
     mask_ratios = args.mask_ratios
-    models = [("vit_small_patch16", "finetuned_sensing_small_%d.pth"),]
+    models = [("vit_small_patch16", "sensing_small_lora.pth"),]
               # ("vit_medium_patch16", "finetuned_sensing_medium_%d.pth"),
               # ("vit_large_patch16", "finetuned_sensing_large_%d.pth")]
     batch_size = args.batch_size

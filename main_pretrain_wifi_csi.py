@@ -15,14 +15,14 @@ import numpy as np
 import os
 import time
 from pathlib import Path
-import pathlib
 
 import torch
 import torch.backends.cudnn as cudnn
 from torch.utils.tensorboard import SummaryWriter
 import torchvision
 import torchvision.transforms as transforms
-from dataset_classes.spectrogram_images import SpectrogramImages
+from dataset_classes.pretrain_csi_wifi import CSIWiFi
+from torch.utils.data import DataLoader, RandomSampler
 
 import timm.optim.optim_factory as optim_factory
 
@@ -34,15 +34,16 @@ from engine_pretrain import train_one_epoch
 
 
 def get_args_parser():
-    parser = argparse.ArgumentParser('MAE pre-training', add_help=False)
+    parser = argparse.ArgumentParser('MAE pre-training on WiFi CSI', add_help=False)
     parser.add_argument('--batch_size', default=64, type=int,
                         help='Batch size per GPU (effective batch size is batch_size * accum_iter * # gpus')
     parser.add_argument('--epochs', default=400, type=int)
     parser.add_argument('--accum_iter', default=1, type=int,
-                        help='Accumulate gradient iterations (for increasing the effective batch size under memory constraints)')
+                        help='Accumulate gradient iterations '
+                             '(for increasing the effective batch size under memory constraints)')
 
     # Model parameters
-    parser.add_argument('--model', default='mae_vit_large_patch16', type=str, metavar='MODEL',
+    parser.add_argument('--model', default='mae_vit_small_patch16', type=str, metavar='MODEL',
                         help='Name of model to train')
 
     parser.add_argument('--input_size', default=224, type=int,
@@ -50,10 +51,6 @@ def get_args_parser():
 
     parser.add_argument('--mask_ratio', default=0.75, type=float,
                         help='Masking ratio (percentage of removed patches).')
-
-    parser.add_argument('--norm_pix_loss', action='store_true',
-                        help='Use (per-patch) normalized pixels as targets for computing loss')
-    parser.set_defaults(norm_pix_loss=False)
 
     # Optimizer parameters
     parser.add_argument('--weight_decay', type=float, default=0.05,
@@ -70,9 +67,9 @@ def get_args_parser():
                         help='epochs to warmup LR')
 
     # Dataset parameters
-    parser.add_argument('--data_path', default='', type=str,
-                        help='dataset path')
-
+    parser.add_argument('--data_path', default='', type=str, help='dataset path(s)')
+    parser.add_argument('augmentation', action='store_true', default=False,
+                        help='apply data augmentation')
     parser.add_argument('--output_dir', default='./output_dir',
                         help='path where to save, empty for no saving')
     parser.add_argument('--log_dir', default='./output_dir',
@@ -90,62 +87,28 @@ def get_args_parser():
                         help='Pin CPU memory in DataLoader for more efficient (sometimes) transfer to GPU.')
     parser.add_argument('--no_pin_mem', action='store_false', dest='pin_mem')
     parser.set_defaults(pin_mem=True)
-
-    # distributed training parameters
-    parser.add_argument('--world_size', default=1, type=int,
-                        help='number of distributed processes')
-    parser.add_argument('--local_rank', default=-1, type=int)
-    parser.add_argument('--dist_on_itp', action='store_true')
-    parser.add_argument('--dist_url', default='env://',
-                        help='url used to set up distributed training')
-
     return parser
 
 
 def main(args):
-    misc.init_distributed_mode(args)
-
     print('job dir: {}'.format(os.path.dirname(os.path.realpath(__file__))))
     print("{}".format(args).replace(', ', ',\n'))
 
     device = torch.device(args.device)
 
     # fix the seed for reproducibility
-    seed = args.seed + misc.get_rank()
+    seed = 42
     torch.manual_seed(seed)
     np.random.seed(seed)
 
     cudnn.benchmark = True
-
-    # simple augmentation
-    transform_train = transforms.Compose([
-        transforms.functional.pil_to_tensor,
-        transforms.Lambda(lambda x: 10 * torch.log10(x + 1e-12)),
-        transforms.Lambda(lambda x: (x + 155.8) / (-8.41 + 155.8)),
-        transforms.Resize((224, 224), antialias=True,
-                          interpolation=torchvision.transforms.InterpolationMode.BICUBIC),  # Resize
-        transforms.Normalize(mean=[0.634], std=[0.0664])  # Normalize
-    ])
-    dataset_train = SpectrogramImages(args.data_path, transform=transform_train)
+    dataset_train = CSIWiFi(args.data_path)
     print(dataset_train)
+    sampler_train = RandomSampler(dataset_train)
+    os.makedirs(args.log_dir, exist_ok=True)
+    log_writer = SummaryWriter(log_dir=args.log_dir)
 
-    if True:  # args.distributed:
-        num_tasks = misc.get_world_size()
-        global_rank = misc.get_rank()
-        sampler_train = torch.utils.data.DistributedSampler(
-            dataset_train, num_replicas=num_tasks, rank=global_rank, shuffle=True
-        )
-        print("Sampler_train = %s" % str(sampler_train))
-    else:
-        sampler_train = torch.utils.data.RandomSampler(dataset_train)
-
-    if global_rank == 0 and args.log_dir is not None:
-        os.makedirs(args.log_dir, exist_ok=True)
-        log_writer = SummaryWriter(log_dir=args.log_dir)
-    else:
-        log_writer = None
-
-    data_loader_train = torch.utils.data.DataLoader(
+    data_loader_train = DataLoader(
         dataset_train, sampler=sampler_train,
         batch_size=args.batch_size,
         num_workers=args.num_workers,
@@ -154,22 +117,13 @@ def main(args):
     )
     
     # define the model
-    model = models_mae.__dict__[args.model](norm_pix_loss=False)
-    if args.resume != '':
-        pathlib.PosixPath = pathlib.WindowsPath
-        checkpoint = torch.load(Path(args.resume), map_location='cpu')
-        checkpoint['model']['pos_embed'] = model.pos_embed
-        checkpoint['model']['decoder_pos_embed'] = model.decoder_pos_embed
-        filtered_state_dict = {k: v for k, v in checkpoint['model'].items() if not k.startswith('decoder')}
-        model.load_state_dict(filtered_state_dict, strict=False)
-        print("=> loaded checkpoint '{}'".format(args.resume))
-    args.resume = ''
+    model = models_mae.__dict__[args.model](norm_pix_loss=False, in_chans=3)
     model.to(device)
 
     model_without_ddp = model
     print("Model = %s" % str(model_without_ddp))
 
-    eff_batch_size = args.batch_size * args.accum_iter * misc.get_world_size()
+    eff_batch_size = args.batch_size * args.accum_iter
     
     if args.lr is None:  # only base_lr is specified
         args.lr = args.blr * eff_batch_size / 256
@@ -179,10 +133,6 @@ def main(args):
 
     print("accumulate grad iterations: %d" % args.accum_iter)
     print("effective batch size: %d" % eff_batch_size)
-
-    if args.distributed:
-        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=True)
-        model_without_ddp = model.module
     
     # following timm: set wd as 0 for bias and norm layers
     param_groups = optim_factory.param_groups_weight_decay(model_without_ddp, args.weight_decay)
@@ -195,8 +145,6 @@ def main(args):
     print(f"Start training for {args.epochs} epochs")
     start_time = time.time()
     for epoch in range(args.start_epoch, args.epochs):
-        if args.distributed:
-            data_loader_train.sampler.set_epoch(epoch)
         train_stats = train_one_epoch(
             model, data_loader_train,
             optimizer, device, epoch, loss_scaler,
@@ -208,10 +156,9 @@ def main(args):
                 args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
                 loss_scaler=loss_scaler, epoch=epoch)
 
-        log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
-                        'epoch': epoch,}
+        log_stats = {**{f'train_{k}': v for k, v in train_stats.items()}, 'epoch': epoch}
 
-        if args.output_dir and misc.is_main_process():
+        if args.output_dir:
             if log_writer is not None:
                 log_writer.flush()
             with open(os.path.join(args.output_dir, "log.txt"), mode="a", encoding="utf-8") as f:

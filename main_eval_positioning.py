@@ -29,7 +29,7 @@ dataloader_test = DataLoader(dataset_test, batch_size=256, shuffle=False, num_wo
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 # device = 'cpu'
 model = models_vit.__dict__['vit_small_patch16'](global_pool='token', num_classes=3, drop_path_rate=0.1, in_chans=4)
-checkpoint = torch.load(Path('output_dir_outdoor_small/checkpoint-70.pth'), map_location='cpu')
+checkpoint = torch.load(Path('output_dir_outdoor_small/checkpoint-200.pth'), map_location='cpu')
 msg = model.load_state_dict(checkpoint['model'], strict=True)
 print(msg)
 
