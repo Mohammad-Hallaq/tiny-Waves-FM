@@ -16,7 +16,12 @@ class CSISensingDataset(Dataset):
         self.img_size = img_size
         self.labels = ['run', 'walk', 'fall', 'box', 'circle', 'clean']
         self.downsampled = downsampled
-        self.min_val, self.max_val, self.mu, self.std = self.compute_stats()
+        if self.downsampled:
+            self.min_val, self.max_val = -0.44, 56.07
+            self.mu, self.std = [0.7352, 0.7653, 0.7686], [0.0899, 0.0717, 0.0831]
+        else:
+            self.min_val, self.max_val = 2.44, 54.72
+            self.mu, self.std = [0.7396, 0.7722, 0.7758], [0.0960, 0.0764, 0.0888]
         self.transforms = Compose([Lambda(lambda x: torch.as_tensor(x, dtype=torch.float32)),
                                    Resize(self.img_size, antialias=True, interpolation=InterpolationMode.BICUBIC),
                                    Lambda(lambda x: (x - self.min_val) / (self.max_val - self.min_val)),
