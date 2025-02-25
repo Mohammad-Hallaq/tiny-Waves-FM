@@ -173,14 +173,14 @@ def main(args):
     else:
         data_loader_train_two = DataLoader(
             dataset_train_two, sampler=sampler_train_two,
-            batch_size=args.batch_size // 2,
+            batch_size=args.batch_size,
             num_workers=args.num_workers,
             pin_memory=args.pin_mem,
             drop_last=True)
 
         data_loader_train_three = DataLoader(
             dataset_train_three, sampler=sampler_train_three,
-            batch_size=args.batch_size // 2,
+            batch_size=args.batch_size,
             num_workers=args.num_workers,
             pin_memory=args.pin_mem,
             drop_last=True)
