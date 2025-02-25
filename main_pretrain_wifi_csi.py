@@ -114,7 +114,7 @@ def main(args):
         transforms.RandomResizedCrop(224, scale=(0.8, 1.0), interpolation=transforms.InterpolationMode.BICUBIC),
         transforms.RandomHorizontalFlip(),
         transforms.RandomVerticalFlip(),
-        AddGaussianNoise(mean=0.0, std=0.1)]
+        AddGaussianNoise(mean=0.0, std=0.05)]
     )
     if args.augmentation:
         dataset_train = CSIWiFi(args.data_path, augment_transforms=augment_transforms)
