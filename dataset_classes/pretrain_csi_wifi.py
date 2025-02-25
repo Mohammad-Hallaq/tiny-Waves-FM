@@ -27,6 +27,8 @@ class CSIWiFi(Dataset):
         self.augment_transforms = augment_transforms
 
     def __getitem__(self, index):
+        if index >= len(self.file_list):
+            index %= len(self.file_list)
         sample_name = self.file_list[index]
         csi = loadmat(os.path.join(self.root_dir, sample_name))['CSIamp']
         csi = csi.reshape(3, 114, -1)

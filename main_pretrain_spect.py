@@ -43,7 +43,7 @@ def get_args_parser():
                              '(for increasing the effective batch size under memory constraints)')
 
     # Model parameters
-    parser.add_argument('--model', default='mae_vit_large_patch16', type=str, metavar='MODEL',
+    parser.add_argument('--model', default='mae_vit_small_patch16', type=str, metavar='MODEL',
                         help='Name of model to train')
 
     parser.add_argument('--input_size', default=224, type=int,
@@ -87,10 +87,17 @@ def get_args_parser():
     parser.add_argument('--no_pin_mem', action='store_false', dest='pin_mem')
     parser.set_defaults(pin_mem=True)
 
+    # distributed training parameters
+    parser.add_argument('--world_size', default=1, type=int, help=argparse.SUPPRESS)
+    parser.add_argument('--local_rank', default=-1, type=int, help=argparse.SUPPRESS)
+    parser.add_argument('--dist_on_itp', action='store_true', help=argparse.SUPPRESS)
+    parser.add_argument('--dist_url', default='env://', help=argparse.SUPPRESS)
+
     return parser
 
 
 def main(args):
+    misc.init_distributed_mode(args)
     print('job dir: {}'.format(os.path.dirname(os.path.realpath(__file__))))
     print("{}".format(args).replace(', ', ',\n'))
 
@@ -127,7 +134,7 @@ def main(args):
     )
     
     # define the model
-    model = models_mae.__dict__[args.model](norm_pix_loss=False)
+    model = models_mae.__dict__[args.model](norm_pix_loss=False, in_chans=1)
     model.to(device)
 
     model_without_ddp = model

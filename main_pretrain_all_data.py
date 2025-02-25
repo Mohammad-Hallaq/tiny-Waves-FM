@@ -19,8 +19,9 @@ from pathlib import Path
 import torch
 import torch.backends.cudnn as cudnn
 from torch.utils.tensorboard import SummaryWriter
-import torchvision
-import torchvision.transforms as transforms
+from torchvision import transforms
+from torchvision.transforms import InterpolationMode
+from gaussian_noise import AddGaussianNoise
 from dataset_classes.pretrain_csi_5g import CSI5G
 from dataset_classes.pretrain_csi_wifi import CSIWiFi
 from dataset_classes.spectrogram_images import SpectrogramImages
@@ -45,7 +46,7 @@ def get_args_parser():
                              '(for increasing the effective batch size under memory constraints)')
 
     # Model parameters
-    parser.add_argument('--model', default='mae_vit_large_patch16', type=str, metavar='MODEL',
+    parser.add_argument('--model', default='mae_vit_small_patch16', type=str, metavar='MODEL',
                         help='Name of model to train')
 
     parser.add_argument('--input_size', default=224, type=int,
@@ -71,7 +72,8 @@ def get_args_parser():
     # Dataset parameters
     parser.add_argument('--data_path', default=[], type=str, nargs='+',
                         help='dataset path(s)')
-
+    parser.add_argument('--augmentation', action='store_true', default=False,
+                        help='apply data augmentation')
     parser.add_argument('--output_dir', default='./output_dir',
                         help='path where to save, empty for no saving')
     parser.add_argument('--log_dir', default='./output_dir',
@@ -90,10 +92,17 @@ def get_args_parser():
     parser.add_argument('--no_pin_mem', action='store_false', dest='pin_mem')
     parser.set_defaults(pin_mem=True)
 
+    # distributed training parameters
+    parser.add_argument('--world_size', default=1, type=int, help=argparse.SUPPRESS)
+    parser.add_argument('--local_rank', default=-1, type=int, help=argparse.SUPPRESS)
+    parser.add_argument('--dist_on_itp', action='store_true', help=argparse.SUPPRESS)
+    parser.add_argument('--dist_url', default='env://', help=argparse.SUPPRESS)
+
     return parser
 
 
 def main(args):
+    misc.init_distributed_mode(args)
     print('job dir: {}'.format(os.path.dirname(os.path.realpath(__file__))))
     print("{}".format(args).replace(', ', ',\n'))
 
@@ -111,12 +120,24 @@ def main(args):
         transforms.Lambda(lambda x: 10 * torch.log10(x + 1e-12)),
         transforms.Lambda(lambda x: (x + 120) / (-0.5 + 120)),
         transforms.Resize((224, 224), antialias=True,
-                          interpolation=torchvision.transforms.InterpolationMode.BICUBIC),  # Resize
+                          interpolation=InterpolationMode.BICUBIC),  # Resize
         transforms.Normalize(mean=[0.451], std=[0.043])  # Normalize
     ])
+
     dataset_train_one = SpectrogramImages(args.data_path[:-2], transform=transform_train)
-    dataset_train_two = CSI5G(args.data_path[-2])
-    dataset_train_three = CSIWiFi(args.data_path[-1])
+
+    augment_transforms = transforms.Compose([
+        transforms.RandomResizedCrop(224, scale=(0.8, 1.0), interpolation=transforms.InterpolationMode.BICUBIC),
+        transforms.RandomHorizontalFlip(),
+        transforms.RandomVerticalFlip(),
+        AddGaussianNoise(mean=0.0, std=0.05)]
+    )
+    if args.augmentation:
+        dataset_train_two = CSI5G(args.data_path[-2], augment_transforms=augment_transforms)
+        dataset_train_three = CSIWiFi(args.data_path[-1], augment_transforms=augment_transforms)
+    else:
+        dataset_train_two = CSI5G(args.data_path[-2])
+        dataset_train_three = CSIWiFi(args.data_path[-1])
     print(dataset_train_one, dataset_train_two, dataset_train_three)
 
     sampler_train_one = RandomSampler(dataset_train_one)

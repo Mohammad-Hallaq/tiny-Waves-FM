@@ -19,8 +19,8 @@ from pathlib import Path
 import torch
 import torch.backends.cudnn as cudnn
 from torch.utils.tensorboard import SummaryWriter
-import torchvision
-import torchvision.transforms as transforms
+from gaussian_noise import AddGaussianNoise
+from torchvision import transforms
 from dataset_classes.pretrain_csi_5g import CSI5G
 from torch.utils.data import DataLoader, RandomSampler
 
@@ -68,7 +68,7 @@ def get_args_parser():
 
     # Dataset parameters
     parser.add_argument('--data_path', default='', type=str, help='dataset path(s)')
-    parser.add_argument('augmentation', action='store_true', default=False,
+    parser.add_argument('--augmentation', action='store_true', default=False,
                         help='apply data augmentation')
     parser.add_argument('--output_dir', default='./output_dir',
                         help='path where to save, empty for no saving')
@@ -87,10 +87,18 @@ def get_args_parser():
                         help='Pin CPU memory in DataLoader for more efficient (sometimes) transfer to GPU.')
     parser.add_argument('--no_pin_mem', action='store_false', dest='pin_mem')
     parser.set_defaults(pin_mem=True)
+
+    # distributed training parameters
+    parser.add_argument('--world_size', default=1, type=int, help=argparse.SUPPRESS)
+    parser.add_argument('--local_rank', default=-1, type=int, help=argparse.SUPPRESS)
+    parser.add_argument('--dist_on_itp', action='store_true', help=argparse.SUPPRESS)
+    parser.add_argument('--dist_url', default='env://', help=argparse.SUPPRESS)
+
     return parser
 
 
 def main(args):
+    misc.init_distributed_mode(args)
     print('job dir: {}'.format(os.path.dirname(os.path.realpath(__file__))))
     print("{}".format(args).replace(', ', ',\n'))
 
@@ -102,7 +110,17 @@ def main(args):
     np.random.seed(seed)
 
     cudnn.benchmark = True
-    dataset_train = CSI5G(args.data_path)
+    augment_transforms = transforms.Compose([
+        transforms.RandomResizedCrop(224, scale=(0.8, 1.0), interpolation=transforms.InterpolationMode.BICUBIC),
+        transforms.RandomHorizontalFlip(),
+        transforms.RandomVerticalFlip(),
+        AddGaussianNoise(mean=0.0, std=0.05)]
+    )
+    if args.augmentation:
+        dataset_train = CSI5G(args.data_path, augment_transforms=augment_transforms)
+    else:
+        dataset_train = CSI5G(args.data_path)
+
     print(dataset_train)
     sampler_train = RandomSampler(dataset_train)
     os.makedirs(args.log_dir, exist_ok=True)
