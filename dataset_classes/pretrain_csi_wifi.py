@@ -7,11 +7,12 @@ from pathlib import Path
 
 
 class CSIWiFi(Dataset):
-    def __init__(self, root_dir, img_size=(224, 224), augment_transforms=None, downsampled=False):
+    def __init__(self, root_dir, img_size=(224, 224), augment_transforms=None, downsampled=False, factor=2):
         self.root_dir = root_dir
         self.file_list = os.listdir(Path(root_dir))
         self.img_size = img_size
         self.downsampled = downsampled
+        self.factor = factor
         if self.downsampled:
             self.min_val, self.max_val = -1.31, 54.37
             self.mu, self.std = [0.7094, 0.7570, 0.6963], [0.0842, 0.0801, 0.0851]
@@ -42,7 +43,7 @@ class CSIWiFi(Dataset):
 
     def __len__(self):
         if self.augment_transforms:
-            return 2 * len(self.file_list)
+            return self.factor * len(self.file_list)
         else:
             return len(self.file_list)
 

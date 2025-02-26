@@ -19,15 +19,12 @@ import util.lr_sched as lr_sched
 
 class RoundRobinLoader:
     def __init__(self, loaders):
-        self.loaders = loaders
-        # Compute total iterations from the lengths of all loaders.
-        self.total = sum(len(loader) for loader in loaders.values())
+        self.loaders = {f'Loader_{i}': loader for i, loader in enumerate(loaders)}
+        self.total = sum(len(loader) for loader in loaders)
 
     def __iter__(self):
-        # Create iterators for each dataloader.
         iterators = {k: iter(loader) for k, loader in self.loaders.items()}
         order = list(self.loaders.keys())
-        # Continue until all iterators are exhausted.
         while order:
             for key in order.copy():
                 try:
@@ -41,7 +38,7 @@ class RoundRobinLoader:
 
 
 def train_one_epoch(model: torch.nn.Module,
-                    data_loader_A, data_loader_B, data_loader_C,
+                    data_loaders: list,
                     optimizer: torch.optim.Optimizer,
                     device: torch.device, epoch: int, loss_scaler,
                     log_writer=None,
@@ -57,18 +54,8 @@ def train_one_epoch(model: torch.nn.Module,
     if log_writer is not None:
         print('log_dir: {}'.format(log_writer.log_dir))
 
-    # Compute total iterations as the sum of batches in each dataloader.
-    total_iterations = len(data_loader_A) + len(data_loader_B) + len(data_loader_C)
-
-    # Create a dictionary of your dataloaders.
-    loaders = {
-        'A': data_loader_A,
-        'B': data_loader_B,
-        'C': data_loader_C
-    }
-
-    # Create the round-robin iterator.
-    combined_iter = RoundRobinLoader(loaders)
+    total_iterations = sum(len(loader) for loader in data_loaders)
+    combined_iter = RoundRobinLoader(data_loaders)
 
     for data_iter_step, (key, samples, labels) in enumerate(metric_logger.log_every(combined_iter, print_freq, header)):
 
