@@ -84,7 +84,7 @@ def train_one_epoch(model: torch.nn.Module,
         loss_value = loss.item()
         if not math.isfinite(loss_value):
             print(f"Loss is {loss_value}, skipping")
-            loss = torch.tensor([0.0,], device=device, dtype=torch.float32)
+            loss = torch.nan_to_num(loss, nan=0.0, posinf=0.0, neginf=0.0)
 
         loss /= accum_iter
         loss_scaler(loss, optimizer, parameters=model.parameters(),
