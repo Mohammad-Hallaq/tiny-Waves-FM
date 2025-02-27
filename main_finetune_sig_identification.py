@@ -241,7 +241,7 @@ def main(args):
 
     if args.lora:
         model.freeze_encoder_lora()
-    elif args.frozen_blocks:
+    elif args.frozen_blocks is not None:
         model.freeze_encoder(args.frozen_blocks)
     else:
         model.freeze_encoder()
