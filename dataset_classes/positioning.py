@@ -32,14 +32,15 @@ class Positioning5G(Dataset):
         If the specified scene is not recognized.
     """
 
-    def __init__(self, datapath, img_size=(224, 224), scene='outdoor'):
+    def __init__(self, datapath, img_size=(224, 224), scene='outdoor', pretrain=False, augment_transforms=None):
         self.img_size = img_size
         self.scene = scene
+        self.pretrain = pretrain
 
         # Get list of all `.h5` files for the specified scene
-        self.data_files = [os.path.join(datapath, filename) for filename in os.listdir(datapath)
-        ]
+        self.data_files = [os.path.join(datapath, filename) for filename in os.listdir(datapath)]
         self.num_samples = len(self.data_files)
+        self.augment_transforms = augment_transforms
 
         # Define scene-specific normalization parameters
         if scene == 'outdoor':
@@ -84,13 +85,16 @@ class Positioning5G(Dataset):
         # Load features and labels from an `.h5` file
         with h5py.File(self.data_files[index], 'r') as data_file:
             features = np.array(data_file['features'])  # CSI feature map
-            labels = torch.as_tensor(np.array(data_file['position']), dtype=torch.float)  # Position label
-
-        # Normalize position labels to range [-1, 1]
-        labels = 2 * (labels - self.coord_nominal_min) / (self.coord_nominal_max - self.coord_nominal_min) - 1
+            if self.pretrain:
+                labels = torch.as_tensor([1,], dtype=torch.float32)
+            else:
+                labels = torch.as_tensor(np.array(data_file['position']), dtype=torch.float)  # Position label
+                labels = 2 * (labels - self.coord_nominal_min) / (self.coord_nominal_max - self.coord_nominal_min) - 1
 
         # Apply transformations to features
         features = self.transforms(features)
+        if self.augment_transforms is not None:
+            features = self.augment_transforms(features)
 
         return features, labels
 

@@ -19,25 +19,22 @@ from pathlib import Path
 import torch
 import torch.backends.cudnn as cudnn
 from torch.utils.tensorboard import SummaryWriter
-from torchvision import transforms
-from torchvision.transforms import InterpolationMode
 from gaussian_noise import AddGaussianNoise
-from dataset_classes.pretrain_csi_5g import CSI5G
-from dataset_classes.pretrain_csi_wifi import CSIWiFi
-from dataset_classes.spectrogram_images import SpectrogramImages
-
+from torchvision import transforms
+from dataset_classes.positioning import Positioning5G
 from torch.utils.data import DataLoader, RandomSampler
+
 import timm.optim.optim_factory as optim_factory
 
 import util.misc as misc
 from util.misc import NativeScalerWithGradNormCount as NativeScaler
 
-import models_mae_hetero
-from engine_pretrain_hetero import train_one_epoch
+import models_mae
+from engine_pretrain import train_one_epoch
 
 
 def get_args_parser():
-    parser = argparse.ArgumentParser('MAE pre-training on all datasets', add_help=False)
+    parser = argparse.ArgumentParser('MAE pre-training on 5G Positioning CSI', add_help=False)
     parser.add_argument('--batch_size', default=64, type=int,
                         help='Batch size per GPU (effective batch size is batch_size * accum_iter * # gpus')
     parser.add_argument('--epochs', default=400, type=int)
@@ -70,14 +67,9 @@ def get_args_parser():
                         help='epochs to warmup LR')
 
     # Dataset parameters
-    parser.add_argument('--data_path', default=[], type=str, nargs='+',
-                        help='dataset path(s)')
+    parser.add_argument('--data_path', default='', type=str, help='dataset path(s)')
     parser.add_argument('--augmentation', action='store_true', default=False,
                         help='apply data augmentation')
-    parser.add_argument('--augment_factor', type=int, default=4,
-                        help='increase factor in CSI data (default is 4 times original length)')
-    parser.add_argument('--csi_subsampling', action='store_true', default=False,
-                        help='Use half batch size for CSI data')
     parser.add_argument('--output_dir', default='./output_dir',
                         help='path where to save, empty for no saving')
     parser.add_argument('--log_dir', default='./output_dir',
@@ -118,18 +110,6 @@ def main(args):
     np.random.seed(seed)
 
     cudnn.benchmark = True
-
-    transform_train = transforms.Compose([
-        transforms.functional.pil_to_tensor,
-        transforms.Lambda(lambda x: 10 * torch.log10(x + 1e-12)),
-        transforms.Lambda(lambda x: (x + 120) / (-0.5 + 120)),
-        transforms.Resize((224, 224), antialias=True,
-                          interpolation=InterpolationMode.BICUBIC),  # Resize
-        transforms.Normalize(mean=[0.451], std=[0.043])  # Normalize
-    ])
-
-    dataset_train_one = SpectrogramImages(args.data_path[:-1], transform=transform_train)
-
     augment_transforms = transforms.Compose([
         transforms.RandomResizedCrop(224, scale=(0.8, 1.0), interpolation=transforms.InterpolationMode.BICUBIC),
         transforms.RandomHorizontalFlip(),
@@ -137,49 +117,32 @@ def main(args):
         AddGaussianNoise(mean=0.0, std=0.05)]
     )
     if args.augmentation:
-        dataset_train_two = CSIWiFi(args.data_path[-1], augment_transforms=augment_transforms, factor=args.augment_factor)
+        dataset_train = Positioning5G(args.data_path, augment_transforms=augment_transforms, pretrain=True, scene='indoor')
     else:
-        dataset_train_two = CSIWiFi(args.data_path[-1])
+        dataset_train = Positioning5G(args.data_path, pretrain=True, scene='indoor')
 
-    print(dataset_train_one, dataset_train_two)
-
-    sampler_train_one = RandomSampler(dataset_train_one)
-    sampler_train_two = RandomSampler(dataset_train_two)
-
+    print(dataset_train)
+    sampler_train = RandomSampler(dataset_train)
     os.makedirs(args.log_dir, exist_ok=True)
     log_writer = SummaryWriter(log_dir=args.log_dir)
 
-    data_loader_train_one = DataLoader(
-        dataset_train_one, sampler=sampler_train_one,
+    data_loader_train = DataLoader(
+        dataset_train, sampler=sampler_train,
         batch_size=args.batch_size,
         num_workers=args.num_workers,
         pin_memory=args.pin_mem,
-        drop_last=True)
-
-    if args.csi_subsampling:
-        data_loader_train_two = DataLoader(
-            dataset_train_two, sampler=sampler_train_two,
-            batch_size=args.batch_size // 2,
-            num_workers=args.num_workers,
-            pin_memory=args.pin_mem,
-            drop_last=True)
-    else:
-        data_loader_train_two = DataLoader(
-            dataset_train_two, sampler=sampler_train_two,
-            batch_size=args.batch_size,
-            num_workers=args.num_workers,
-            pin_memory=args.pin_mem,
-            drop_last=True)
+        drop_last=True,
+    )
 
     # define the model
-    model = models_mae_hetero.__dict__[args.model](norm_pix_loss=False, in_chans=[1, 3])
+    model = models_mae.__dict__[args.model](norm_pix_loss=False, in_chans=5)
     model.to(device)
 
     model_without_ddp = model
     print("Model = %s" % str(model_without_ddp))
 
     eff_batch_size = args.batch_size * args.accum_iter
-    
+
     if args.lr is None:  # only base_lr is specified
         args.lr = args.blr * eff_batch_size / 256
 
@@ -201,12 +164,11 @@ def main(args):
     start_time = time.time()
     for epoch in range(args.start_epoch, args.epochs):
         train_stats = train_one_epoch(
-            model, [data_loader_train_one, data_loader_train_two],
+            model, data_loader_train,
             optimizer, device, epoch, loss_scaler,
             log_writer=log_writer,
             args=args
         )
-
         if args.output_dir and (epoch % 20 == 0 or epoch + 1 == args.epochs):
             misc.save_model(
                 args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
