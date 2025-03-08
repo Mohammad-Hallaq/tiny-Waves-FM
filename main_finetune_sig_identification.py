@@ -313,7 +313,8 @@ def main(args):
         log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
                      **{f'test_{k}': v for k, v in test_stats.items()},
                      'epoch': epoch,
-                     'n_parameters': n_parameters}
+                     'n_parameters': n_parameters,
+                     'lora_rank': args.lora_rank}
 
         if args.output_dir:
             if log_writer is not None:
