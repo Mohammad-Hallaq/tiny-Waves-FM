@@ -65,13 +65,13 @@ def main(args):
     # Adjust axis labels for the second row, first column (index 3) and third row, second column (index 7)
     ax.set_ylabel('True label', fontsize=16)
     ax.set_xlabel('Predicted label', fontsize=16)
-
+    plt.title("Pretrained with Positioning Data", fontsize=16)
     # Adjust layout to avoid overlap
     plt.tight_layout()
 
     # Save the plot
     masking = str(ckpt_path).split('_')[-1].split('.')[0]
-    plt.savefig(Path(f'Figures/conf_mat_{model_name}_{masking}_sensing.png'), dpi=400)
+    #plt.savefig(Path(f'Figures/conf_mat_{model_name}_{masking}_sensing.png'), dpi=400)
 
     # Show the plot
     plt.show()

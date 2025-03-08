@@ -97,12 +97,14 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
 
 @torch.no_grad()
 def evaluate(data_loader, model, criterion, device):
-
     metric_logger = misc.MetricLogger(delimiter="  ")
     header = 'Test:'
 
     # switch to evaluation mode
     model.eval()
+
+    per_class_correct = None
+    per_class_total = None
 
     for batch in metric_logger.log_every(data_loader, 10, header):
         images = batch[0]
@@ -115,15 +117,49 @@ def evaluate(data_loader, model, criterion, device):
             output = model(images)
             loss = criterion(output, target)
 
+        # compute top-1 and top-3 accuracy for the batch
         acc1, acc3 = accuracy(output, target, topk=(1, 3))
 
         batch_size = images.shape[0]
         metric_logger.update(loss=loss.item())
         metric_logger.meters['acc1'].update(acc1.item(), n=batch_size)
         metric_logger.meters['acc3'].update(acc3.item(), n=batch_size)
+
+        # Initialize per-class tracking on the first batch
+        if per_class_correct is None:
+            num_classes = output.shape[1]
+            per_class_correct = torch.zeros(num_classes, device=device)
+            per_class_total = torch.zeros(num_classes, device=device)
+
+        # Get top-1 predictions
+        _, pred = output.max(1)
+        # Update per-class counts for each sample in the batch
+        for i in range(batch_size):
+            label = target[i]
+            per_class_total[label] += 1
+            if pred[i] == label:
+                per_class_correct[label] += 1
+
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
-    print('* Acc@1 {top1.global_avg:.3f} Acc@3 {top3.global_avg:.3f} loss {losses.global_avg:.3f}'
-          .format(top1=metric_logger.acc1, top3=metric_logger.acc3, losses=metric_logger.loss))
 
-    return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
+    # Compute per-class accuracy (avoiding division by zero)
+    per_class_acc = torch.where(
+        per_class_total > 0,
+        per_class_correct / per_class_total * 100,
+        torch.zeros_like(per_class_total)
+    ).tolist()
+
+    # Compute the mean per-class accuracy
+    mean_per_class_acc = sum(per_class_acc) / len(per_class_acc)
+
+    # Print overall metrics and the mean per-class accuracy in the same line
+    print('* Mean per-class accuracy: {mean_pca:.3f}  Acc@1 {top1.global_avg:.3f}  Acc@3 {top3.global_avg:.3f}  '
+          'Loss {losses.global_avg:.3f}'
+          .format(top1=metric_logger.acc1, top3=metric_logger.acc3,
+                  losses=metric_logger.loss, mean_pca=mean_per_class_acc))
+
+    overall_metrics = {k: meter.global_avg for k, meter in metric_logger.meters.items()}
+    overall_metrics['pca'] = mean_per_class_acc
+    return overall_metrics
+

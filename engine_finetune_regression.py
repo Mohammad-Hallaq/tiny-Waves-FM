@@ -93,13 +93,19 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
 
 
 @torch.no_grad()
-def evaluate(data_loader, model, criterion, device):
+def evaluate(data_loader, model, criterion, device, coord_min, coord_max):
+    # Ensure coord_min and coord_max are on the same device.
+    coord_min = coord_min.to(device)
+    coord_max = coord_max.to(device)
+
+    def reverse_normalize(x):
+        return (x + 1) / 2 * (coord_max - coord_min) + coord_min
 
     metric_logger = misc.MetricLogger(delimiter="  ")
     header = 'Test:'
 
-    # switch to evaluation mode
     model.eval()
+    distances_list = []
 
     for batch in metric_logger.log_every(data_loader, 10, header):
         images = batch[0]
@@ -107,14 +113,33 @@ def evaluate(data_loader, model, criterion, device):
         images = images.to(device, non_blocking=True)
         target = target.to(device, non_blocking=True)
 
-        # compute output
+        # Compute model output and loss
         with torch.cuda.amp.autocast():
             output = model(images)
             loss = criterion(output, target)
 
         metric_logger.update(loss=loss.item())
-    # gather the stats from all processes
-    metric_logger.synchronize_between_processes()
-    print('* loss {losses.global_avg:.3f}'.format(losses=metric_logger.loss))
 
-    return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
+        # Compute unnormalized predictions and true positions on GPU.
+        pred_position = reverse_normalize(output)
+        true_position = reverse_normalize(target)
+
+        # Compute Euclidean distance error for each sample in the batch.
+        distance_error = torch.sqrt(torch.sum((pred_position - true_position) ** 2, dim=1))
+        distances_list.append(distance_error)
+
+    metric_logger.synchronize_between_processes()
+
+    # Concatenate all error distances and compute mean and standard deviation on GPU.
+    all_distances = torch.cat(distances_list, dim=0)
+    mean_distance = all_distances.mean().item()
+    std_distance = all_distances.std().item()
+
+    print('* loss {losses.global_avg:.3f}  Mean distance error: {mean_distance:.3f}  '
+          'Stdev distance error: {std_distance:.3f}'
+          .format(losses=metric_logger.loss, mean_distance=mean_distance, std_distance=std_distance))
+
+    results = {k: meter.global_avg for k, meter in metric_logger.meters.items()}
+    results['mean_distance_error'] = mean_distance
+    results['stdev_distance_error'] = std_distance
+    return results

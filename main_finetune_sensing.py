@@ -49,14 +49,12 @@ def get_args_parser():
     parser.add_argument('--model', default='seg_vit_large_patch16', type=str, metavar='MODEL',
                         help='Name of model to train')
 
-
     parser.add_argument('--input_size', default=224, type=int,
                         help='images input size')
 
     parser.add_argument('--drop_path', type=float, default=0.1, metavar='PCT',
                         help='Drop path rate (default: 0.1)')
     parser.add_argument('--frozen_blocks', type=int, help='number of encoder blocks to freeze. Freezes all by default')
-
 
     # Optimizer parameters
     parser.add_argument('--clip_grad', type=float, default=None, metavar='NORM',
@@ -283,17 +281,18 @@ def main(args):
             log_writer=log_writer,
             args=args
         )
-        if args.output_dir and ((epoch + 1) % 10 == 0 or (epoch + 1) == args.epochs):
+        if args.output_dir and (epoch % 10 == 0 or (epoch + 1) == args.epochs):
             misc.save_model(
                 args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
                 loss_scaler=loss_scaler, epoch=epoch)
 
         test_stats = evaluate(data_loader_val, model, criterion, device)
-        print(f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
-        max_accuracy = max(max_accuracy, test_stats["acc1"])
-        print(f'Max accuracy: {max_accuracy:.2f}%')
+        print(f"Mean per-class accuracy of the network on the {len(dataset_val)} test images: {test_stats['pca']:.3f}%")
+        max_accuracy = max(max_accuracy, test_stats["pca"])
+        print(f'Max accuracy: {max_accuracy:.3f}%')
 
         if log_writer is not None:
+            log_writer.add_scalar('perf/test_pca', test_stats['pca'], epoch)
             log_writer.add_scalar('perf/test_acc1', test_stats['acc1'], epoch)
             log_writer.add_scalar('perf/test_acc3', test_stats['acc3'], epoch)
             log_writer.add_scalar('perf/test_loss', test_stats['loss'], epoch)

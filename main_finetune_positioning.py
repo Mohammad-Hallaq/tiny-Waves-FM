@@ -241,18 +241,27 @@ def main(args):
             log_writer=log_writer,
             args=args
         )
-        if args.output_dir and ((epoch + 1) % 10 == 0 or (epoch + 1) == args.epochs):
+        if args.output_dir and (epoch % 10 == 0 or (epoch + 1) == args.epochs):
             misc.save_model(
                 args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
                 loss_scaler=loss_scaler, epoch=epoch)
 
-        test_stats = evaluate(data_loader_val, model, criterion, device)
-        print(f"Error of the network on the {len(dataset_val)} test images: {test_stats['loss']:.4f}")
-        min_error = min(min_error, test_stats["loss"])
-        print(f'Test error: {min_error:.4f}')
+        test_stats = evaluate(
+            data_loader_val, model, criterion, device,
+            dataset_train.coord_nominal_min, dataset_train.coord_nominal_max
+        )
+        print(f"Test loss on the {len(dataset_val)} test images: {test_stats['loss']:.4f}")
+        print(f"Mean distance error: {test_stats['mean_distance_error']:.4f}, "
+              f"Stdev distance error: {test_stats['stdev_distance_error']:.4f}")
+
+        # Use the mean distance error as the main error metric for updating min_error.
+        min_error = min(min_error, test_stats["mean_distance_error"])
+        print(f'Minimum mean distance error: {min_error:.4f}')
 
         if log_writer is not None:
             log_writer.add_scalar('perf/test_loss', test_stats['loss'], epoch)
+            log_writer.add_scalar('perf/test_mean_distance_error', test_stats['mean_distance_error'], epoch)
+            log_writer.add_scalar('perf/test_stdev_distance_error', test_stats['stdev_distance_error'], epoch)
 
         log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
                      **{f'test_{k}': v for k, v in test_stats.items()},
