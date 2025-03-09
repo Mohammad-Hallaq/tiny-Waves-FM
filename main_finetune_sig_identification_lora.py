@@ -64,7 +64,7 @@ def get_args_parser():
 
     parser.add_argument('--lora_rank', type=int, default=8, help='Rank of LoRa (default: 8)')
 
-    parser.add_argument('--lora_alpha', type=float, default=1, help='Alpha for LoRa (default: 1)')
+    parser.add_argument('--lora_alpha', type=float, default=1, help='Alpha for LoRa (default: 0.5)')
 
     # Optimizer parameters
     parser.add_argument('--clip_grad', type=float, default=None, metavar='NORM',
@@ -162,7 +162,8 @@ def main(args):
     device = torch.device(args.device)
 
     # fix the seed for reproducibility
-    seed = 42
+    seed = np.random.randint(1, 100000)
+    print(f"seed is {seed}")
     torch.manual_seed(seed)
     np.random.seed(seed)
 
@@ -255,7 +256,7 @@ def main(args):
     print('number of params (M): %.2f' % (n_parameters / 1.e6))
 
     eff_batch_size = args.batch_size * args.accum_iter
-    
+
     if args.lr is None:  # only base_lr is specified
         args.lr = args.blr * eff_batch_size / 256
 
@@ -294,7 +295,7 @@ def main(args):
             log_writer=log_writer,
             args=args
         )
-        if args.output_dir and (epoch % 10 == 0 or (epoch + 1) == args.epochs):
+        if args.output_dir and (epoch + 1) == args.epochs:
             misc.save_model(
                 args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
                 loss_scaler=loss_scaler, epoch=epoch)
