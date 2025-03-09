@@ -46,7 +46,7 @@ def get_args_parser():
                              '(for increasing the effective batch size under memory constraints)')
 
     # Model parameters
-    parser.add_argument('--model', default='seg_vit_large_patch16', type=str, metavar='MODEL',
+    parser.add_argument('--model', default='vit_small_patch16', type=str, metavar='MODEL',
                         help='Name of model to train')
 
     parser.add_argument('--input_size', default=224, type=int,
@@ -160,7 +160,8 @@ def main(args):
     device = torch.device(args.device)
 
     # fix the seed for reproducibility
-    seed = 42
+    seed = np.random.randint(1, 100000)
+    print(f"seed is {seed}")
     torch.manual_seed(seed)
     np.random.seed(seed)
 
@@ -281,7 +282,7 @@ def main(args):
             log_writer=log_writer,
             args=args
         )
-        if args.output_dir and (epoch % 10 == 0 or (epoch + 1) == args.epochs):
+        if args.output_dir and (epoch % 20 == 0 or (epoch + 1) == args.epochs):
             misc.save_model(
                 args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
                 loss_scaler=loss_scaler, epoch=epoch)
