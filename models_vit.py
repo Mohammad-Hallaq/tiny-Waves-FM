@@ -15,12 +15,14 @@ import torch
 import torch.nn as nn
 
 import timm.models.vision_transformer
+from timm.models._manipulate import checkpoint_seq
+from advanced_finetuning.prefix import PrefixEncoder
 
 
 class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
     """ Vision Transformer with support for global average pooling
     """
-    def __init__(self, global_pool, tanh=False, head_layers=1, **kwargs):
+    def __init__(self, global_pool, tanh=False, head_layers=1, prefix_tuning=False, num_prefix_tokens=10, **kwargs):
         super(VisionTransformer, self).__init__(**kwargs)
         self.global_pool = global_pool
         self.tanh = tanh
@@ -30,6 +32,10 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
             layers.extend([nn.Linear(self.embed_dim, self.embed_dim), nn.ReLU()])
         layers.append(nn.Linear(self.embed_dim, num_classes))
         self.head = nn.Sequential(*layers) if head_layers > 1 else nn.Linear(self.embed_dim, num_classes)
+        if prefix_tuning:
+            self.prefix_encoder = PrefixEncoder(num_prefix_tokens, self.embed_dim, len(self.blocks))
+        else:
+            self.prefix_encoder = None
 
     def unfreeze_patch_embed(self):
         for param in self.patch_embed.parameters():
@@ -61,6 +67,37 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
         # Unfreeze classifier layer
         for param in self.head.parameters():
             param.requires_grad = True
+
+    def freeze_encoder_prefix(self):
+        # Freeze all params
+        for param in self.blocks.parameters():
+            param.requires_grad = False
+
+        for param in self.prefix_encoder.parameters():
+            param.requires_grad = True
+
+        # Unfreeze classifier layer
+        for param in self.head.parameters():
+            param.requires_grad = True
+
+    def forward_features(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.patch_embed(x)
+        x = self._pos_embed(x)
+        x = self.patch_drop(x)
+        x = self.norm_pre(x)
+        if self.grad_checkpointing and not torch.jit.is_scripting():
+            x = checkpoint_seq(self.blocks, x)
+        elif self.prefix_encoder is not None:
+            B = x.shape[0]
+            prefix_tokens = self.prefix_encoder(B)
+            for i, block in enumerate(self.blocks):
+                prefix_k, prefix_v = torch.split(
+                    prefix_tokens[:, :, i * self.embed_dim:(i + 2) * self.embed_dim], self.embed_dim, dim=-1)
+                x = block(x, prefix_k, prefix_v)
+        else:
+            x = self.blocks(x)
+        x = self.norm(x)
+        return x
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.forward_features(x)

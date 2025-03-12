@@ -29,6 +29,7 @@ from timm.loss import LabelSmoothingCrossEntropy, SoftTargetCrossEntropy
 from timm.data.mixup import Mixup
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from advanced_finetuning.lora import create_lora_model
+from advanced_finetuning.prefix import create_prefix_tuning_model
 
 import models_vit
 
@@ -64,6 +65,11 @@ def get_args_parser():
     parser.add_argument('--lora_rank', type=int, default=8, help='Rank of LoRa (default: 8)')
 
     parser.add_argument('--lora_alpha', type=float, default=1, help='Alpha for LoRa (default: 1)')
+
+    # Prefix Tuning Parameters
+    parser.add_argument('--prefix_tuning', action='store_true', help='Whether to use prefix tuning')
+
+    parser.add_argument('--num_prefix_tokens', type=int, default=20, help='Number of prefix tokens')
 
     # Optimizer parameters
     parser.add_argument('--clip_grad', type=float, default=None, metavar='NORM',
@@ -212,7 +218,9 @@ def main(args):
         mixup_fn = None
 
     model = models_vit.__dict__[args.model](global_pool=args.global_pool, num_classes=args.nb_classes,
-                                            drop_path_rate=args.drop_path, in_chans=1, head_layers=args.head_layers)
+                                            drop_path_rate=args.drop_path, in_chans=1, head_layers=args.head_layers,
+                                            prefix_tuning=args.prefix_tuning,
+                                            num_prefix_tokens=args.num_prefix_tokens)
 
     if args.resume:
         checkpoint = torch.load(args.resume, map_location='cpu')
@@ -238,9 +246,13 @@ def main(args):
             trunc_normal_(model.head.weight, std=2e-5)
         if args.lora:
             model = create_lora_model(model, args.lora_rank, args.lora_alpha)
+        elif args.prefix_tuning:
+            model = create_prefix_tuning_model(model, pool='token')
 
     if args.lora:
         model.freeze_encoder_lora()
+    elif args.prefix_tuning:
+        model.freeze_encoder_prefix()
     elif args.frozen_blocks is not None:
         model.freeze_encoder(args.frozen_blocks)
     else:
@@ -310,12 +322,24 @@ def main(args):
             log_writer.add_scalar('perf/test_acc3', test_stats['acc3'], epoch)
             log_writer.add_scalar('perf/test_loss', test_stats['loss'], epoch)
 
-        log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
-                     **{f'test_{k}': v for k, v in test_stats.items()},
-                     'epoch': epoch,
-                     'n_parameters': n_parameters,
-                     'lora_rank': args.lora_rank,
-                     'lora_alpha': args.lora_alpha}
+        if args.lora:
+            log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
+                         **{f'test_{k}': v for k, v in test_stats.items()},
+                         'epoch': epoch,
+                         'n_parameters': n_parameters,
+                         'lora_rank': args.lora_rank,
+                         'lora_alpha': args.lora_alpha}
+        elif args.prefix_tuning:
+            log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
+                         **{f'test_{k}': v for k, v in test_stats.items()},
+                         'epoch': epoch,
+                         'n_parameters': n_parameters,
+                         'num_prefix_tokens': args.num_prefix_tokens}
+        else:
+            log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
+                         **{f'test_{k}': v for k, v in test_stats.items()},
+                         'epoch': epoch,
+                         'n_parameters': n_parameters}
 
         if args.output_dir:
             if log_writer is not None:
