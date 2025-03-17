@@ -45,6 +45,8 @@ def get_args_parser():
     parser.add_argument('--accum_iter', default=1, type=int,
                         help='Accumulate gradient iterations '
                              '(for increasing the effective batch size under memory constraints)')
+    parser.add_argument('--seed', type=int, default=42,
+                        help='seed for initializing training.')
 
     # Model parameters
     parser.add_argument('--model', default='vit_small_patch16', type=str, metavar='MODEL',
@@ -166,10 +168,9 @@ def main(args):
     device = torch.device(args.device)
 
     # fix the seed for reproducibility
-    seed = np.random.randint(1, 100000)
-    print(f"seed is {seed}")
-    torch.manual_seed(seed)
-    np.random.seed(seed)
+    print(f"seed is {args.seed}")
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
 
     cudnn.benchmark = True
 
