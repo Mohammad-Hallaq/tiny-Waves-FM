@@ -186,7 +186,7 @@ def main(args):
         msg = model.load_state_dict(checkpoint_model, strict=False)
         print(msg)
 
-    if args.frozen_blocks:
+    if args.frozen_blocks is not None:
         model.freeze_encoder(args.frozen_blocks)
     else:
         model.freeze_encoder()
