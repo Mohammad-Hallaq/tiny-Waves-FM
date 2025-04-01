@@ -22,7 +22,6 @@ import torch
 import torch.backends.cudnn as cudnn
 from torch.nn import MSELoss, L1Loss
 from torch.utils.tensorboard import SummaryWriter
-from torch.utils.data import random_split
 
 import util.lr_decay as lrd
 import util.misc as misc
@@ -35,6 +34,7 @@ import math
 from engine_finetune_regression_ce import train_one_epoch, evaluate
 from dataset_classes.ofdm_channel_estimation import OfdmChannelEstimation
 from snr_weighted_loss import WeightedLoss
+
 
 def get_args_parser():
     parser = argparse.ArgumentParser('MAE fine-tuning for MIMO/OFDM Channel Estimation', add_help=False)
@@ -81,13 +81,10 @@ def get_args_parser():
     # * Finetuning params
     parser.add_argument('--finetune', default='',
                         help='finetune from checkpoint')
-    parser.add_argument('--global_pool', default='avg')
 
     # Dataset parameters
-    parser.add_argument('--data_path', default='../datasets/channel_estimation_dataset/', type=str,
+    parser.add_argument('--data_path', default='', type=str,
                         help='dataset path')
-    parser.add_argument('--nb_outputs', default=3, type=int,
-                        help='number of outputs')
 
     parser.add_argument('--output_dir', default='./output_dir',
                         help='path where to save, empty for no saving')
@@ -133,18 +130,16 @@ def main(args):
     device = torch.device(args.device)
 
     # fix the seed for reproducibility
-    # seed = args.seed + misc.get_rank()
-    seed = 42
-    torch.manual_seed(seed)
-    np.random.seed(seed)
-    random.seed(seed)
-
+    print(f"seed is {args.seed}")
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
+    random.seed(args.seed)
     cudnn.benchmark = True
 
-    dataset_train = OfdmChannelEstimation(os.path.join(Path(args.data_path), 'train'), normalize_labels=args.normalize_labels)
-    dataset_val = OfdmChannelEstimation(Path(args.data_path, 'val'), normalize_labels=args.normalize_labels)
-
-    # dataset_train, dataset_val = random_split(dataset, [0.75, 0.25], generator=torch.Generator().manual_seed(seed))
+    dataset_train = OfdmChannelEstimation(os.path.join(Path(args.data_path), 'train'),
+                                          normalize_labels=args.normalize_labels)
+    dataset_val = OfdmChannelEstimation(Path(args.data_path, 'val'),
+                                        normalize_labels=args.normalize_labels)
 
     sampler_train = RandomSampler(dataset_train)
     sampler_val = SequentialSampler(dataset_val)

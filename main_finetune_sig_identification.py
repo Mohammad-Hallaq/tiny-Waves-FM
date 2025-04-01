@@ -221,6 +221,10 @@ def main(args):
                                             drop_path_rate=args.drop_path, in_chans=1, head_layers=args.head_layers,
                                             prefix_tuning=args.prefix_tuning,
                                             num_prefix_tokens=args.num_prefix_tokens)
+    if args.lora:
+        model = create_lora_model(model, args.lora_rank, args.lora_alpha)
+    elif args.prefix_tuning:
+        model = create_prefix_tuning_model(model, pool='token')
 
     if args.resume:
         checkpoint = torch.load(args.resume, map_location='cpu')
@@ -244,10 +248,6 @@ def main(args):
         # manually initialize fc layer
         if args.head_layers == 1:
             trunc_normal_(model.head.weight, std=2e-5)
-        if args.lora:
-            model = create_lora_model(model, args.lora_rank, args.lora_alpha)
-        elif args.prefix_tuning:
-            model = create_prefix_tuning_model(model, pool='token')
 
     if args.lora:
         model.freeze_encoder_lora()

@@ -129,7 +129,6 @@ def evaluate(data_loader, model, criterion, device):
             else:
                 loss = criterion(outputs, targets)
 
-
         metric_logger.update(loss=loss.item())
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()

@@ -162,10 +162,9 @@ def main(args):
     device = torch.device(args.device)
 
     # fix the seed for reproducibility
-    seed = np.random.randint(1, 100000)
-    print(f"seed is {seed}")
-    torch.manual_seed(seed)
-    np.random.seed(seed)
+    print(f"seed is {args.seed}")
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
 
     cudnn.benchmark = True
 
@@ -214,14 +213,16 @@ def main(args):
 
     model = models_vit.__dict__[args.model](global_pool=args.global_pool, num_classes=args.nb_classes,
                                             drop_path_rate=args.drop_path, in_chans=1, head_layers=args.head_layers)
+    if args.lora:
+        model = create_lora_model(model, args.lora_rank, args.lora_alpha)
 
     if args.resume:
-        checkpoint = torch.load(args.resume, map_location='cpu')
-        print("Load pre-trained checkpoint from: %s" % args.resume)
-        checkpoint_model = checkpoint['model']
-        msg = model.load_state_dict(checkpoint_model, strict=True)
-        print(msg)
-
+        if not args.lora:
+            checkpoint = torch.load(args.resume, map_location='cpu')
+            print("Load pre-trained checkpoint from: %s" % args.resume)
+            checkpoint_model = checkpoint['model']
+            msg = model.load_state_dict(checkpoint_model, strict=True)
+            print(msg)
     elif args.finetune:
         checkpoint = torch.load(args.finetune, map_location='cpu')
         print("Load pre-trained checkpoint from: %s" % args.finetune)
@@ -237,8 +238,6 @@ def main(args):
         # manually initialize fc layer
         if args.head_layers == 1:
             trunc_normal_(model.head.weight, std=2e-5)
-        if args.lora:
-            model = create_lora_model(model, args.lora_rank, args.lora_alpha)
 
     if args.lora:
         model.freeze_encoder_lora()

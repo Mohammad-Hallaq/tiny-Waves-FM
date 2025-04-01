@@ -25,7 +25,6 @@ class OfdmChannelEstimation(Dataset):
                                   Lambda(lambda x: 2 * (x - self.min_features) / (self.max_features - self.min_features) - 1),
                                   Normalize(mean=self.mu, std=self.std),
                                   Resize((224, 224), interpolation=InterpolationMode.BICUBIC, antialias=True),])
-        self.transform_label = Lambda(lambda x: torch.as_tensor(x, dtype=torch.float32))
         if normalize_labels:
             self.transform_label = Compose([Lambda(lambda x: torch.as_tensor(x, dtype=torch.float32)),
                                             Lambda(lambda x: 2 * (x - self.min_label) / (self.max_label - self.min_label) - 1)])

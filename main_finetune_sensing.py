@@ -211,6 +211,11 @@ def main(args):
     model = models_vit.__dict__[args.model](global_pool=args.global_pool, num_classes=args.nb_classes,
                                             drop_path_rate=args.drop_path, prefix_tuning=args.prefix_tuning,
                                             num_prefix_tokens=args.num_prefix_tokens)
+    if args.lora:
+        model = create_lora_model(model, args.lora_rank, args.lora_alpha)
+    elif args.prefix_tuning:
+        model = create_prefix_tuning_model(model, pool='token')
+
     if args.resume:
         checkpoint = torch.load(args.resume, map_location='cpu')
         print("Load pre-trained checkpoint from: %s" % args.resume)
@@ -232,10 +237,6 @@ def main(args):
         print(msg)
         # manually initialize fc layer
         trunc_normal_(model.head.weight, std=2e-5)
-        if args.lora:
-            model = create_lora_model(model, args.lora_rank, args.lora_alpha)
-        elif args.prefix_tuning:
-            model = create_prefix_tuning_model(model, pool='token')
 
     if args.lora:
         model.freeze_encoder_lora()
