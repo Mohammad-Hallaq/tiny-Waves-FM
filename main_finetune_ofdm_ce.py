@@ -136,9 +136,9 @@ def main(args):
     random.seed(args.seed)
     cudnn.benchmark = True
 
-    dataset_train = OfdmChannelEstimation(os.path.join(Path(args.data_path), 'train'),
+    dataset_train = OfdmChannelEstimation(os.path.join(Path(args.data_path), 'train_preprocessed'),
                                           normalize_labels=args.normalize_labels)
-    dataset_val = OfdmChannelEstimation(Path(args.data_path, 'val'),
+    dataset_val = OfdmChannelEstimation(Path(args.data_path, 'val_preprocessed'),
                                         normalize_labels=args.normalize_labels)
 
     sampler_train = RandomSampler(dataset_train)
