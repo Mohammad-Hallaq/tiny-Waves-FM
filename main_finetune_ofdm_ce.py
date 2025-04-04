@@ -166,14 +166,14 @@ def main(args):
     model = models_ofdm_ce.__dict__[args.model]()
 
     if args.resume:
-        checkpoint = torch.load(args.resume, map_location='cpu')
+        checkpoint = torch.load(args.resume, map_location='cpu', weights_only=False)
         print("Load pre-trained checkpoint from: %s" % args.resume)
         checkpoint_model = checkpoint['model']
         msg = model.load_state_dict(checkpoint_model, strict=True)
         print(msg)
 
     elif args.finetune:
-        checkpoint = torch.load(args.finetune, map_location='cpu')
+        checkpoint = torch.load(args.finetune, map_location='cpu', weights_only=False)
         print("Load pre-trained checkpoint from: %s" % args.finetune)
         checkpoint_model = checkpoint['model']
         state_dict = model.state_dict()
@@ -237,7 +237,7 @@ def main(args):
             log_writer=log_writer,
             args=args
         )
-        if args.output_dir and epoch % 10 == 0:
+        if args.output_dir and (epoch + 1 == args.epochs):
             misc.save_model(
                 args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
                 loss_scaler=loss_scaler, epoch=epoch)
