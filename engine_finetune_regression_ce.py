@@ -123,7 +123,7 @@ def evaluate(data_loader, model, criterion, device):
             targets = targets.to(device, non_blocking=True)
 
         with torch.cuda.amp.autocast():
-            outputs = model(samples, snr)
+            outputs = model(samples, snr.view((-1, 1)))
             if isinstance(criterion, WeightedLoss):
                 loss = criterion(outputs, targets, snr)
             else:
