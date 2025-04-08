@@ -47,13 +47,12 @@ def get_args_parser():
     # Model parameters
     parser.add_argument('--model', default='ce_large_patch16', type=str, metavar='MODEL',
                         help='Name of model to train')
-
     parser.add_argument('--input_size', default=224, type=int,
                         help='images input size')
-
     parser.add_argument('--drop_path', type=float, default=0.1, metavar='PCT',
                         help='Drop path rate (default: 0.1)')
     parser.add_argument('--frozen_blocks', type=int, help='number of encoder blocks to freeze. Freezes all by default')
+    parser.add_argument('--snr_token', default=False, action='store_true', help='Whether to use SNR token')
     parser.add_argument('--normalize_labels', action='store_true', default=False,
                         help='normalize labels before training')
     # Optimizer parameters
@@ -163,7 +162,7 @@ def main(args):
         drop_last=False
     )
 
-    model = models_ofdm_ce.__dict__[args.model]()
+    model = models_ofdm_ce.__dict__[args.model](snr_token=args.snr_token)
 
     if args.resume:
         checkpoint = torch.load(args.resume, map_location='cpu', weights_only=False)

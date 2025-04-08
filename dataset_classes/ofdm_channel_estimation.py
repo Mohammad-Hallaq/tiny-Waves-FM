@@ -27,11 +27,19 @@ class OfdmChannelEstimation(Dataset):
         else:
             self.transform_label = Lambda(lambda x: torch.as_tensor(x, dtype=torch.float32))
 
+    def create_sample(self, x_rg, y_rg):
+        x_rg_pilot = np.concatenate((x_rg[:, 2], x_rg[:, 11]), axis=1)
+        x_rg_pilot = np.stack((x_rg_pilot.real, x_rg_pilot.imag), axis=1).reshape((x_rg_pilot.shape[0], 2, 1, -1))
+        y_rg_pilot = np.concatenate((y_rg[:, :, 2], y_rg[:, :, 11]), axis=2)
+        y_rg_pilot = np.stack((y_rg_pilot.real, y_rg_pilot.imag), axis=1)
+        x = np.concatenate((x_rg_pilot, y_rg_pilot), axis=2)
+        return self.transform(x)
+
     def __getitem__(self, index):
         with np.load(self.file_list[index]) as data:
             x = data['x']
             h = data['h']
-            snr_db = data['snr_db']
+            snr_db = float(data['snr_db'])
         return self.transform(x), self.transform_label(h), torch.as_tensor(snr_db, dtype=torch.float32)
 
     def reverse_normalize(self, h):
