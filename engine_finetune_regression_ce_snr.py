@@ -20,6 +20,9 @@ from timm.utils import accuracy
 
 import util.misc as misc
 import util.lr_sched as lr_sched
+import torch
+from snr_weighted_loss import WeightedLoss
+from torch.nn import MSELoss
 
 
 def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
@@ -40,18 +43,27 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
     if log_writer is not None:
         print('log_dir: {}'.format(log_writer.log_dir))
 
-    for data_iter_step, (samples, targets) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
+    for data_iter_step, batch in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
 
         # we use a per iteration (instead of per epoch) lr scheduler
         if data_iter_step % accum_iter == 0:
             lr_sched.adjust_learning_rate(optimizer, data_iter_step / len(data_loader) + epoch, args)
 
-        samples = samples.to(device, non_blocking=True)
-        targets = targets.to(device, non_blocking=True)
+        samples, targets, snr = batch
+        if isinstance(criterion, WeightedLoss):
+            samples = samples.to(device, non_blocking=True)
+            targets = targets.to(device, non_blocking=True)
+            snr = snr.to(device, non_blocking=True)
+        else:
+            samples = samples.to(device, non_blocking=True)
+            targets = targets.to(device, non_blocking=True)
 
         with torch.cuda.amp.autocast():
-            outputs = model(samples)
-            loss = criterion(outputs, targets)
+            outputs = model(samples, snr.view((-1, 1)))
+            if isinstance(criterion, WeightedLoss):
+                loss = criterion(outputs, targets, snr)
+            else:
+                loss = criterion(outputs, targets)
 
         loss_value = loss.item()
 
@@ -93,9 +105,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
 
 
 @torch.no_grad()
-def evaluate(data_loader, model, device):
-    criterion = torch.nn.CrossEntropyLoss()
-
+def evaluate(data_loader, model, criterion, device):
     metric_logger = misc.MetricLogger(delimiter="  ")
     header = 'Test:'
 
@@ -103,15 +113,21 @@ def evaluate(data_loader, model, device):
     model.eval()
 
     for batch in metric_logger.log_every(data_loader, 10, header):
-        images = batch[0]
-        target = batch[-1]
-        images = images.to(device, non_blocking=True)
-        target = target.to(device, non_blocking=True)
+        samples, targets, snr = batch
+        if isinstance(criterion, WeightedLoss):
+            samples = samples.to(device, non_blocking=True)
+            targets = targets.to(device, non_blocking=True)
+            snr = snr.to(device, non_blocking=True)
+        else:
+            samples = samples.to(device, non_blocking=True)
+            targets = targets.to(device, non_blocking=True)
 
-        # compute output
         with torch.cuda.amp.autocast():
-            output = model(images)
-            loss = criterion(output, target)
+            outputs = model(samples, snr.view((-1, 1)))
+            if isinstance(criterion, WeightedLoss):
+                loss = criterion(outputs, targets, snr)
+            else:
+                loss = criterion(outputs, targets)
 
         metric_logger.update(loss=loss.item())
     # gather the stats from all processes

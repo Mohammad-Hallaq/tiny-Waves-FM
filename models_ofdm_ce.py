@@ -26,7 +26,7 @@ class CEViT(nn.Module):
     def __init__(self, img_size=224, patch_size=16, in_chans=2,
                  out_chans=2, embed_dim=1024, depth=24, num_heads=16,
                  decoder_embed_dim=512, decoder_depth=1, decoder_num_heads=16,
-                 mlp_ratio=4., norm_layer=nn.LayerNorm, snr_token=False):
+                 mlp_ratio=4., norm_layer=nn.LayerNorm):
         super().__init__()
 
         # --------------------------------------------------------------------------
@@ -34,12 +34,7 @@ class CEViT(nn.Module):
         self.patch_embed = PatchEmbed(img_size, patch_size, in_chans, embed_dim)
         num_patches = self.patch_embed.num_patches
 
-        self.snr_embedding = nn.Sequential(
-            nn.Linear(1, embed_dim),
-            nn.ReLU(),
-            nn.Linear(embed_dim, embed_dim)
-        ) if snr_token else None
-
+        self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
         self.pos_embed = nn.Parameter(torch.zeros(1, num_patches + 1, embed_dim),
                                       requires_grad=False)  # fixed sin-cos embedding
 
@@ -82,7 +77,7 @@ class CEViT(nn.Module):
         torch.nn.init.xavier_uniform_(w.view([w.shape[0], -1]))
 
         # timm's trunc_normal_(std=.02) is effectively normal_(std=0.02) as cutoff is too big (2.)
-        # torch.nn.init.normal_(self.cls_token, std=.02)
+        torch.nn.init.normal_(self.cls_token, std=.02)
 
         # initialize nn.Linear and nn.LayerNorm
         self.apply(self._init_weights)
@@ -126,15 +121,17 @@ class CEViT(nn.Module):
         imgs = x.reshape(shape=(x.shape[0], c, h * p, w * p))
         return imgs
 
-    def forward_encoder(self, x, snr):
+    def forward_encoder(self, x):
         # embed patches
         x = self.patch_embed(x)
 
         # add pos embed w/o cls token
         x = x + self.pos_embed[:, 1:, :]
-        if self.snr_embedding is not None:
-            snr_token = self.snr_embedding(snr) + self.pos_embed[:, :1, :]
-            x = torch.cat((snr_token.view((x.shape[0], 1, x.shape[-1])), x), dim=1)
+
+        # append cls token
+        cls_token = self.cls_token + self.pos_embed[:, :1, :]
+        cls_tokens = cls_token.expand(x.shape[0], -1, -1)
+        x = torch.cat((cls_tokens, x), dim=1)
 
         # apply Transformer blocks
         for blk in self.blocks:
@@ -148,10 +145,7 @@ class CEViT(nn.Module):
         x = self.decoder_embed(x)
 
         # add pos embed
-        if self.snr_embedding is not None:
-            x = x + self.decoder_pos_embed
-        else:
-            x = x + self.decoder_pos_embed[:, 1:, :]
+        x = x + self.decoder_pos_embed
 
         # apply Transformer blocks
         for blk in self.decoder_blocks:
@@ -161,10 +155,10 @@ class CEViT(nn.Module):
         # predictor projection
         x = self.decoder_pred(x)
 
-        return x
+        return x[:, 1:]
 
-    def forward(self, imgs, snr):
-        latent = self.forward_encoder(imgs, snr)
+    def forward(self, imgs):
+        latent = self.forward_encoder(imgs)
         pred = self.forward_decoder(latent)[:, :42]
         return self.unpatchify(pred)
 

@@ -59,7 +59,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
             targets = targets.to(device, non_blocking=True)
 
         with torch.cuda.amp.autocast():
-            outputs = model(samples, snr.view((-1, 1)))
+            outputs = model(samples)
             if isinstance(criterion, WeightedLoss):
                 loss = criterion(outputs, targets, snr)
             else:
@@ -123,7 +123,7 @@ def evaluate(data_loader, model, criterion, device):
             targets = targets.to(device, non_blocking=True)
 
         with torch.cuda.amp.autocast():
-            outputs = model(samples, snr.view((-1, 1)))
+            outputs = model(samples)
             if isinstance(criterion, WeightedLoss):
                 loss = criterion(outputs, targets, snr)
             else:
