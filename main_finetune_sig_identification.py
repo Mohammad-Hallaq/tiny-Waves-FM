@@ -61,6 +61,7 @@ def get_args_parser():
                         help='Drop path rate (default: 0.1)')
     parser.add_argument('--frozen_blocks', type=int, help='number of encoder blocks to freeze. '
                                                           'Freezes all by default')
+    parser.add_argument('--var_size', default=False, action='store_true', help='Use variable sized spectrograms')
     # LoRa Parameters
     parser.add_argument('--lora', action='store_true', help='Whether to use LoRa (default: False)')
 
@@ -174,8 +175,8 @@ def main(args):
 
     cudnn.benchmark = True
 
-    dataset_train = RadioSignal(os.path.join(args.data_path, 'train'))
-    dataset_val = RadioSignal(os.path.join(args.data_path, 'test'))
+    dataset_train = RadioSignal(os.path.join(args.data_path, 'train'), resize=args.var_size)
+    dataset_val = RadioSignal(os.path.join(args.data_path, 'test'), resize=args.var_size)
 
     # print(dataset.data_path)
     # splitter = StratifiedShuffleSplit(n_splits=1, train_size=0.9, test_size=0.1, random_state=seed)
@@ -219,8 +220,8 @@ def main(args):
 
     model = models_vit.__dict__[args.model](global_pool=args.global_pool, num_classes=args.nb_classes,
                                             drop_path_rate=args.drop_path, in_chans=1, head_layers=args.head_layers,
-                                            prefix_tuning=args.prefix_tuning,
-                                            num_prefix_tokens=args.num_prefix_tokens)
+                                            prefix_tuning=args.prefix_tuning, num_prefix_tokens=args.num_prefix_tokens,
+                                            dynamic_img_size=args.var_size)
     if args.lora:
         model = create_lora_model(model, args.lora_rank, args.lora_alpha)
     elif args.prefix_tuning:

@@ -6,7 +6,7 @@ from torchvision.transforms import Normalize, Compose, Resize, InterpolationMode
 
 
 class RadioSignal(Dataset):
-    def __init__(self, data_path):
+    def __init__(self, data_path, resize=True):
         self.data_path = data_path
         self.samples = os.listdir(data_path)  # Cache the file names
         self.labels = ['ads-b', 'airband', 'ais', 'automatic-picture-transmission', 'bluetooth', 'cellular',
@@ -22,12 +22,19 @@ class RadioSignal(Dataset):
         sum_class_weights = sum(class_weights)
         class_weights = [weight / sum_class_weights for weight in class_weights]
         self.class_weights = torch.tensor(class_weights, dtype=torch.float)
-        self.transform = Compose([
-            ToTensor(),
-            Grayscale(),
-            Resize((224, 224), interpolation=InterpolationMode.BICUBIC),
-            Normalize(mean=[0.5], std=[0.5])
-        ])
+        if resize:
+            self.transform = Compose([
+                ToTensor(),
+                Grayscale(),
+                Resize((224, 224), interpolation=InterpolationMode.BICUBIC),
+                Normalize(mean=[0.5], std=[0.5])
+            ])
+        else:
+            self.transform = Compose([
+                ToTensor(),
+                Grayscale(),
+                Normalize(mean=[0.5], std=[0.5])
+            ])
 
     def __getitem__(self, index):
         sample_name = self.samples[index]
