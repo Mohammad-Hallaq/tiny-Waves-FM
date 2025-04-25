@@ -2,7 +2,7 @@ import torch
 from torch.utils.data import Dataset
 import os
 from PIL import Image
-from torchvision.transforms import Normalize, Compose, Resize, InterpolationMode, Grayscale, ToTensor, Lambda
+from torchvision.transforms import Normalize, Compose, Resize, InterpolationMode, Grayscale, ToTensor
 
 
 class RadioSignal(Dataset):

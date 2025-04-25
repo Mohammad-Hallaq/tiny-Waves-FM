@@ -32,8 +32,9 @@ from advanced_finetuning.lora import create_lora_model
 from advanced_finetuning.prefix import create_prefix_tuning_model
 
 import models_vit
+import models_vit_var_size
+from models_vit_var_size import collate_with_patch_mask
 
-from engine_finetune import train_one_epoch, evaluate
 from dataset_classes.radio_sig import RadioSignal
 
 
@@ -166,6 +167,11 @@ def main(args):
     print('job dir: {}'.format(os.path.dirname(os.path.realpath(__file__))))
     print("{}".format(args).replace(', ', ',\n'))
 
+    if not args.var_size:
+        from engine_finetune import train_one_epoch, evaluate
+    else:
+        from engine_finetune_varsize import train_one_epoch, evaluate
+
     device = torch.device(args.device)
 
     # fix the seed for reproducibility
@@ -175,8 +181,8 @@ def main(args):
 
     cudnn.benchmark = True
 
-    dataset_train = RadioSignal(os.path.join(args.data_path, 'train'), resize=args.var_size)
-    dataset_val = RadioSignal(os.path.join(args.data_path, 'test'), resize=args.var_size)
+    dataset_train = RadioSignal(os.path.join(args.data_path, 'train'), resize=not args.var_size)
+    dataset_val = RadioSignal(os.path.join(args.data_path, 'test'), resize=not args.var_size)
 
     # print(dataset.data_path)
     # splitter = StratifiedShuffleSplit(n_splits=1, train_size=0.9, test_size=0.1, random_state=seed)
@@ -192,21 +198,40 @@ def main(args):
     os.makedirs(args.log_dir, exist_ok=True)
     log_writer = SummaryWriter(log_dir=args.log_dir)
 
-    data_loader_train = DataLoader(
-        dataset_train, sampler=sampler_train,
-        batch_size=args.batch_size,
-        num_workers=args.num_workers,
-        pin_memory=args.pin_mem,
-        drop_last=True,
-    )
+    if not args.var_size:
+        data_loader_train = DataLoader(
+            dataset_train, sampler=sampler_train,
+            batch_size=args.batch_size,
+            num_workers=args.num_workers,
+            pin_memory=args.pin_mem,
+            drop_last=True,
+        )
 
-    data_loader_val = DataLoader(
-        dataset_val, sampler=sampler_val,
-        batch_size=args.batch_size,
-        num_workers=args.num_workers,
-        pin_memory=args.pin_mem,
-        drop_last=False
-    )
+        data_loader_val = DataLoader(
+            dataset_val, sampler=sampler_val,
+            batch_size=args.batch_size,
+            num_workers=args.num_workers,
+            pin_memory=args.pin_mem,
+            drop_last=False
+        )
+    else:
+        data_loader_train = DataLoader(
+            dataset_train, sampler=sampler_train,
+            batch_size=args.batch_size,
+            num_workers=args.num_workers,
+            pin_memory=args.pin_mem,
+            drop_last=True,
+            collate_fn=collate_with_patch_mask
+        )
+
+        data_loader_val = DataLoader(
+            dataset_val, sampler=sampler_val,
+            batch_size=args.batch_size,
+            num_workers=args.num_workers,
+            pin_memory=args.pin_mem,
+            drop_last=False,
+            collate_fn=collate_with_patch_mask
+        )
 
     mixup_active = args.mixup > 0 or args.cutmix > 0. or args.cutmix_minmax is not None
     if mixup_active:
@@ -218,10 +243,17 @@ def main(args):
     else:
         mixup_fn = None
 
-    model = models_vit.__dict__[args.model](global_pool=args.global_pool, num_classes=args.nb_classes,
-                                            drop_path_rate=args.drop_path, in_chans=1, head_layers=args.head_layers,
-                                            prefix_tuning=args.prefix_tuning, num_prefix_tokens=args.num_prefix_tokens,
-                                            dynamic_img_size=args.var_size)
+    if args.var_size:
+        model = (
+            models_vit_var_size.__dict__[args.model](global_pool=args.global_pool, num_classes=args.nb_classes,
+                                                     drop_path_rate=args.drop_path, in_chans=1,
+                                                     head_layers=args.head_layers,))
+    else:
+        model = (
+            models_vit.__dict__[args.model](global_pool=args.global_pool, num_classes=args.nb_classes,
+                                            drop_path_rate=args.drop_path, in_chans=1,
+                                            head_layers=args.head_layers, prefix_tuning=args.prefix_tuning,
+                                            num_prefix_tokens=args.num_prefix_tokens))
     if args.lora:
         model = create_lora_model(model, args.lora_rank, args.lora_alpha)
     elif args.prefix_tuning:
