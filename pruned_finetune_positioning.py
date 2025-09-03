@@ -33,32 +33,35 @@ from advanced_finetuning.lora import create_lora_model
 import models_vit
 import math
 
-from engine_finetune_regression import train_one_epoch, evaluate
+from pruned_engine_finetune_regression import train_one_epoch, evaluate
 from dataset_classes.positioning import Positioning5G
 from advanced_finetuning.prefix import create_prefix_tuning_model
 
 
 def get_args_parser():
     parser = argparse.ArgumentParser('MAE fine-tuning for 5G NR Positioning', add_help=False)
-    parser.add_argument('--batch_size', default=64, type=int,
+    parser.add_argument('--batch_size', default=256, type=int,
                         help='Batch size per GPU (effective batch size is batch_size * accum_iter * # gpus')
-    parser.add_argument('--epochs', default=50, type=int)
+    parser.add_argument('--epochs', default=300, type=int)
     parser.add_argument('--accum_iter', default=1, type=int,
                         help='Accumulate gradient iterations ('
                              'for increasing the effective batch size under memory constraints)')
     parser.add_argument('--seed', type=int, default=42,
                         help='seed for initializing training.')
     # Model parameters
-    parser.add_argument('--model', default='vit_small_patch16', type=str, metavar='MODEL',
-                        help='Name of model to train')
+    # parser.add_argument('--model', default='vit_small_patch16', type=str, metavar='MODEL',
+    #                     help='Name of model to train')
+    
+    parser.add_argument('--model_path', default='', type=str, metavar='MODEL',
+                        help='Path to the pruned model')
 
     parser.add_argument('--input_size', default=224, type=int,
                         help='images input size')
-    parser.add_argument('--head_layers', default=1, type=int,
-                        help='number of layers in task head')
+    # parser.add_argument('--head_layers', default=1, type=int,
+    #                     help='number of layers in task head')
     parser.add_argument('--drop_path', type=float, default=0.1, metavar='PCT',
                         help='Drop path rate (default: 0.1)')
-    parser.add_argument('--frozen_blocks', type=int, help='number of encoder blocks to freeze. Freezes all by default')
+    # parser.add_argument('--frozen_blocks', type=int, help='number of encoder blocks to freeze. Freezes all by default')
     parser.add_argument('--tanh', action='store_true', default=False)
 
     # Optimizer parameters
@@ -77,7 +80,7 @@ def get_args_parser():
     parser.add_argument('--min_lr', type=float, default=1e-6, metavar='LR',
                         help='lower lr bound for cyclic schedulers that hit 0')
 
-    parser.add_argument('--warmup_epochs', type=int, default=5, metavar='N',
+    parser.add_argument('--warmup_epochs', type=int, default=15, metavar='N',
                         help='epochs to warmup LR')
 
     # LoRa Parameters
@@ -105,9 +108,9 @@ def get_args_parser():
     parser.add_argument('--nb_outputs', default=3, type=int,
                         help='number of outputs')
 
-    parser.add_argument('--output_dir', default='./output_dir',
+    parser.add_argument('--output_dir', default='./pruning_results/positioning',
                         help='path where to save, empty for no saving')
-    parser.add_argument('--log_dir', default='./output_dir',
+    parser.add_argument('--log_dir', default='./pruning_results/positioning',
                         help='path where to tensorboard log')
     parser.add_argument('--device', default='cuda',
                         help='device to use for training / testing')
@@ -173,50 +176,59 @@ def main(args):
         pin_memory=args.pin_mem,
         drop_last=False
     )
+    print("The path of the pruned model is: ", args.model_path)
+    model = torch.load(args.model_path, weights_only=False)
 
-    model = models_vit.__dict__[args.model](global_pool=args.global_pool, num_classes=args.nb_outputs,
-                                            drop_path_rate=args.drop_path, tanh=args.tanh,
-                                            in_chans=4 if args.scene == 'outdoor' else 5,
-                                            prefix_tuning=args.prefix_tuning,
-                                            num_prefix_tokens=args.num_prefix_tokens, head_layers = args.head_layers)
-    if args.lora:
-        model = create_lora_model(model, args.lora_rank, args.lora_alpha)
-    elif args.prefix_tuning:
-        model = create_prefix_tuning_model(model, pool='token')
+    print(model)
 
-    if args.resume:
-        checkpoint = torch.load(args.resume, map_location='cpu')
-        print("Load pre-trained checkpoint from: %s" % args.resume)
-        checkpoint_model = checkpoint['model']
-        msg = model.load_state_dict(checkpoint_model, strict=True)
-        print(msg)
+    # if args.lora:
+    #     model = create_lora_model(model, args.lora_rank, args.lora_alpha)
+    # elif args.prefix_tuning:
+    #     model = create_prefix_tuning_model(model, pool='token')
 
-    elif args.finetune:
-        checkpoint = torch.load(args.finetune, map_location='cpu', weights_only=False)
-        print("Load pre-trained checkpoint from: %s" % args.finetune)
-        checkpoint_model = checkpoint['model']
-        state_dict = model.state_dict()
-        for k in ['head.weight', 'head.bias', 'pos_embed', 'patch_embed.proj.weight', 'patch_embed.proj.bias']:
-            if k in checkpoint_model and checkpoint_model[k].shape != state_dict[k].shape:
-                print(f"Removing key {k} from pretrained checkpoint")
-                del checkpoint_model[k]
-        # load pre-trained model
-        msg = model.load_state_dict(checkpoint_model, strict=False)
-        print(msg)
-        # manually initialize fc layer
-        if args.head_layers == 1:
-            trunc_normal_(model.head.weight, std=2e-5)
+    # elif args.finetune:
+    #     checkpoint = torch.load(args.finetune, map_location='cpu', weights_only=False)
+    #     print("Load pre-trained checkpoint from: %s" % args.finetune)
+    #     checkpoint_model = checkpoint['model']
+    #     state_dict = model.state_dict()
+    #     for k in ['head.weight', 'head.bias', 'pos_embed', 'patch_embed.proj.weight', 'patch_embed.proj.bias']:
+    #         if k in checkpoint_model and checkpoint_model[k].shape != state_dict[k].shape:
+    #             print(f"Removing key {k} from pretrained checkpoint")
+    #             del checkpoint_model[k]
+    #     # load pre-trained model
+    #     msg = model.load_state_dict(checkpoint_model, strict=False)
+    #     print(msg)
+    #     # manually initialize fc layer
+    #     if args.head_layers == 1:
+    #         trunc_normal_(model.head.weight, std=2e-5)
 
-    if args.lora:
-        model.freeze_encoder_lora()
-    elif args.prefix_tuning:
-        model.freeze_encoder_prefix()
-    elif args.frozen_blocks is not None:
-        model.freeze_encoder(args.frozen_blocks)
-    else:
-        model.freeze_encoder()
+    # if args.lora:
+    #     model.freeze_encoder_lora()
+    # elif args.prefix_tuning:
+    #     model.freeze_encoder_prefix()
+    # elif args.frozen_blocks is not None:
+    #     model.freeze_encoder(args.frozen_blocks)
+    # else:
+    #     model.freeze_encoder()
 
-    model.unfreeze_patch_embed()
+    # model.unfreeze_patch_embed()
+    for param in model.blocks.parameters():
+            param.requires_grad = False
+    
+    # Freeze positional embeddings and tokens
+    if hasattr(model, "cls_token"):
+        model.cls_token.requires_grad = False
+    if hasattr(model, "pos_embed"):
+        model.pos_embed.requires_grad = False
+    if hasattr(model, "mask_token"):
+        model.mask_token.requires_grad = False
+    if hasattr(model, "decoder_pos_embed"):
+        model.decoder_pos_embed.requires_grad = False
+
+    # Confirm that only the classification head is trainable
+    for name, param in model.named_parameters():
+        print(f"{name}: {'Trainable' if param.requires_grad else 'Frozen'}")
+
     model = model.to(device)
     model_without_ddp = model
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -228,7 +240,7 @@ def main(args):
     for name, param in model.named_parameters():
         print(f"{name}: {'Trainable' if param.requires_grad else 'Frozen'}")
 
-    print("The number of frozen blocks is: ", args.frozen_blocks)
+    # print("The number of frozen blocks is: ", args.frozen_blocks)
 
     eff_batch_size = args.batch_size * args.accum_iter
     

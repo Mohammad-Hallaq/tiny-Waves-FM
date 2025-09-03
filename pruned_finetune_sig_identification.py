@@ -28,20 +28,23 @@ from timm.layers import trunc_normal_
 from timm.loss import LabelSmoothingCrossEntropy, SoftTargetCrossEntropy
 from timm.data.mixup import Mixup
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
-
-import models_vit
 from advanced_finetuning.lora import create_lora_model
 from advanced_finetuning.prefix import create_prefix_tuning_model
 
-from engine_finetune import train_one_epoch, evaluate
-from dataset_classes.csi_sensing import CSISensingDataset
+import models_vit
+import models_vit_var_size
+from models_vit_var_size import collate_with_patch_mask
+
+from dataset_classes.radio_sig import RadioSignal
+
+from pruned_engine_finetune import train_one_epoch, evaluate
 
 
 def get_args_parser():
-    parser = argparse.ArgumentParser('MAE fine-tuning for CSI sensing', add_help=False)
-    parser.add_argument('--batch_size', default=64, type=int,
+    parser = argparse.ArgumentParser('MAE fine-tuning for Radio Signal Identification', add_help=False)
+    parser.add_argument('--batch_size', default=256, type=int,
                         help='Batch size per GPU (effective batch size is batch_size * accum_iter * # gpus')
-    parser.add_argument('--epochs', default=50, type=int)
+    parser.add_argument('--epochs', default=300, type=int)
     parser.add_argument('--accum_iter', default=1, type=int,
                         help='Accumulate gradient iterations '
                              '(for increasing the effective batch size under memory constraints)')
@@ -49,15 +52,34 @@ def get_args_parser():
                         help='seed for initializing training.')
 
     # Model parameters
-    parser.add_argument('--model', default='vit_small_patch16', type=str, metavar='MODEL',
-                        help='Name of model to train')
+    # parser.add_argument('--model', default='vit_small_patch16', type=str, metavar='MODEL',
+    #                     help='Name of model to train')
+
+    parser.add_argument('--model_path', default='', type=str, metavar='MODEL',
+                        help='Path to the pruned model')
+
 
     parser.add_argument('--input_size', default=224, type=int,
                         help='images input size')
+    # parser.add_argument('--head_layers', default=1, type=int,
+    #                     help='number of layers in task head')
 
     parser.add_argument('--drop_path', type=float, default=0.1, metavar='PCT',
                         help='Drop path rate (default: 0.1)')
-    parser.add_argument('--frozen_blocks', type=int, help='number of encoder blocks to freeze. Freezes all by default')
+    # parser.add_argument('--frozen_blocks', type=int, help='number of encoder blocks to freeze. '
+    #                                                       'Freezes all by default')
+    parser.add_argument('--var_size', default=False, action='store_true', help='Use variable sized spectrograms')
+    # LoRa Parameters
+    parser.add_argument('--lora', action='store_true', help='Whether to use LoRa (default: False)')
+
+    parser.add_argument('--lora_rank', type=int, default=8, help='Rank of LoRa (default: 8)')
+
+    parser.add_argument('--lora_alpha', type=float, default=1, help='Alpha for LoRa (default: 1)')
+
+    # Prefix Tuning Parameters
+    parser.add_argument('--prefix_tuning', action='store_true', help='Whether to use prefix tuning')
+
+    parser.add_argument('--num_prefix_tokens', type=int, default=20, help='Number of prefix tokens')
 
     # Optimizer parameters
     parser.add_argument('--clip_grad', type=float, default=None, metavar='NORM',
@@ -75,20 +97,8 @@ def get_args_parser():
     parser.add_argument('--min_lr', type=float, default=1e-6, metavar='LR',
                         help='lower lr bound for cyclic schedulers that hit 0')
 
-    parser.add_argument('--warmup_epochs', type=int, default=5, metavar='N',
+    parser.add_argument('--warmup_epochs', type=int, default=15, metavar='N',
                         help='epochs to warmup LR')
-
-    # LoRa Parameters
-    parser.add_argument('--lora', action='store_true', help='Whether to use LoRa (default: False)')
-
-    parser.add_argument('--lora_rank', type=int, default=8, help='Rank of LoRa (default: 8)')
-
-    parser.add_argument('--lora_alpha', type=float, default=1, help='Alpha for LoRa (default: 0.5)')
-
-    # Prefix Tuning Parameters
-    parser.add_argument('--prefix_tuning', action='store_true', help='Whether to use prefix tuning')
-
-    parser.add_argument('--num_prefix_tokens', type=int, default=20, help='Number of prefix tokens')
 
     # Augmentation parameters
     parser.add_argument('--smoothing', type=float, default=0,
@@ -126,13 +136,12 @@ def get_args_parser():
     # Dataset parameters
     parser.add_argument('--data_path', default='', type=str,
                         help='dataset path')
-    parser.add_argument('--nb_classes', default=6, type=int,
+    parser.add_argument('--nb_classes', default=20, type=int,
                         help='number of the classification types')
-    parser.add_argument('--downsampled', action='store_true', default=False)
 
-    parser.add_argument('--output_dir', default='./output_dir',
+    parser.add_argument('--output_dir', default='./pruning_results/sig_identification',
                         help='path where to save, empty for no saving')
-    parser.add_argument('--log_dir', default='./output_dir',
+    parser.add_argument('--log_dir', default='./pruning_results/sig_identification',
                         help='path where to tensorboard log')
     parser.add_argument('--device', default='cuda',
                         help='device to use for training / testing')
@@ -150,11 +159,11 @@ def get_args_parser():
     # distributed training parameters
     parser.add_argument('--world_size', default=1, type=int,
                         help=argparse.SUPPRESS)
-    parser.add_argument('--local_rank', default=-1, type=int, help=argparse.SUPPRESS)
+    parser.add_argument('--local_rank', default=-1, type=int,
+                        help=argparse.SUPPRESS)
     parser.add_argument('--dist_on_itp', action='store_true', help=argparse.SUPPRESS)
     parser.add_argument('--dist_url', default='env://',
                         help=argparse.SUPPRESS)
-
     return parser
 
 
@@ -163,6 +172,11 @@ def main(args):
 
     print('job dir: {}'.format(os.path.dirname(os.path.realpath(__file__))))
     print("{}".format(args).replace(', ', ',\n'))
+
+    # if not args.var_size:
+    #     from engine_finetune import train_one_epoch, evaluate
+    # else:
+    #     from engine_finetune_varsize import train_one_epoch, evaluate
 
     device = torch.device(args.device)
 
@@ -173,8 +187,16 @@ def main(args):
 
     cudnn.benchmark = True
 
-    dataset_train = CSISensingDataset(os.path.join(args.data_path, 'train'), downsampled=args.downsampled)
-    dataset_val = CSISensingDataset(os.path.join(args.data_path, 'test'), downsampled=args.downsampled)
+    dataset_train = RadioSignal(os.path.join(args.data_path, 'train'), resize=not args.var_size)
+    dataset_val = RadioSignal(os.path.join(args.data_path, 'test'), resize=not args.var_size)
+
+    # print(dataset.data_path)
+    # splitter = StratifiedShuffleSplit(n_splits=1, train_size=0.9, test_size=0.1, random_state=seed)
+    # all_labels = [dataset[i][1] for i in range(len(dataset))]
+
+    # for train_idx, test_idx in splitter.split(range(len(dataset)), all_labels):
+    #     dataset_train = Subset(dataset, train_idx)
+    #     dataset_val = Subset(dataset, test_idx)
 
     sampler_train = RandomSampler(dataset_train)
     sampler_val = SequentialSampler(dataset_val)
@@ -182,21 +204,40 @@ def main(args):
     os.makedirs(args.log_dir, exist_ok=True)
     log_writer = SummaryWriter(log_dir=args.log_dir)
 
-    data_loader_train = DataLoader(
-        dataset_train, sampler=sampler_train,
-        batch_size=args.batch_size,
-        num_workers=args.num_workers,
-        pin_memory=args.pin_mem,
-        drop_last=True,
-    )
+    if not args.var_size:
+        data_loader_train = DataLoader(
+            dataset_train, sampler=sampler_train,
+            batch_size=args.batch_size,
+            num_workers=args.num_workers,
+            pin_memory=args.pin_mem,
+            drop_last=True,
+        )
 
-    data_loader_val = DataLoader(
-        dataset_val, sampler=sampler_val,
-        batch_size=args.batch_size,
-        num_workers=args.num_workers,
-        pin_memory=args.pin_mem,
-        drop_last=False
-    )
+        data_loader_val = DataLoader(
+            dataset_val, sampler=sampler_val,
+            batch_size=args.batch_size,
+            num_workers=args.num_workers,
+            pin_memory=args.pin_mem,
+            drop_last=False
+        )
+    else:
+        data_loader_train = DataLoader(
+            dataset_train, sampler=sampler_train,
+            batch_size=args.batch_size,
+            num_workers=args.num_workers,
+            pin_memory=args.pin_mem,
+            drop_last=True,
+            collate_fn=collate_with_patch_mask
+        )
+
+        data_loader_val = DataLoader(
+            dataset_val, sampler=sampler_val,
+            batch_size=args.batch_size,
+            num_workers=args.num_workers,
+            pin_memory=args.pin_mem,
+            drop_last=False,
+            collate_fn=collate_with_patch_mask
+        )
 
     mixup_active = args.mixup > 0 or args.cutmix > 0. or args.cutmix_minmax is not None
     if mixup_active:
@@ -208,47 +249,81 @@ def main(args):
     else:
         mixup_fn = None
 
-    model = models_vit.__dict__[args.model](global_pool=args.global_pool, num_classes=args.nb_classes,
-                                            drop_path_rate=args.drop_path, prefix_tuning=args.prefix_tuning,
-                                            num_prefix_tokens=args.num_prefix_tokens)
-    if args.lora:
-        model = create_lora_model(model, args.lora_rank, args.lora_alpha)
-    elif args.prefix_tuning:
-        model = create_prefix_tuning_model(model, pool='token')
+    # if args.var_size:
+    #     model = (
+    #         models_vit_var_size.__dict__[args.model](global_pool=args.global_pool, num_classes=args.nb_classes,
+    #                                                  drop_path_rate=args.drop_path, in_chans=1,
+    #                                                  head_layers=args.head_layers,))
+    # else:
+    #     model = (
+    #         models_vit.__dict__[args.model](global_pool=args.global_pool, num_classes=args.nb_classes,
+    #                                         drop_path_rate=args.drop_path, in_chans=1,
+    #                                         head_layers=args.head_layers, prefix_tuning=args.prefix_tuning,
+    #                                         num_prefix_tokens=args.num_prefix_tokens))
+    # if args.lora:
+    #     model = create_lora_model(model, args.lora_rank, args.lora_alpha)
+    # elif args.prefix_tuning:
+    #     model = create_prefix_tuning_model(model, pool='token')
 
-    if args.resume:
-        checkpoint = torch.load(args.resume, map_location='cpu')
-        print("Load pre-trained checkpoint from: %s" % args.resume)
-        checkpoint_model = checkpoint['model']
-        msg = model.load_state_dict(checkpoint_model, strict=True)
-        print(msg)
+    # if args.resume:
+    #     checkpoint = torch.load(args.resume, map_location='cpu')
+    #     print("Load pre-trained checkpoint from: %s" % args.resume)
+    #     checkpoint_model = checkpoint['model']
+    #     msg = model.load_state_dict(checkpoint_model, strict=True)
+    #     print(msg)
 
-    elif args.finetune:
-        checkpoint = torch.load(args.finetune, map_location='cpu', weights_only=False)
-        print("Load pre-trained checkpoint from: %s" % args.finetune)
-        checkpoint_model = checkpoint['model']
-        state_dict = model.state_dict()
-        for k in ['head.weight', 'head.bias', 'pos_embed', 'patch_embed.proj.weight', 'patch_embed.proj.bias']:
-            if k in checkpoint_model and checkpoint_model[k].shape != state_dict[k].shape:
-                print(f"Removing key {k} from pretrained checkpoint")
-                del checkpoint_model[k]
-        # load pre-trained model
-        msg = model.load_state_dict(checkpoint_model, strict=False)
-        print(msg)
-        # manually initialize fc layer
-        trunc_normal_(model.head.weight, std=2e-5)
+    # elif args.finetune:
+    #     checkpoint = torch.load(args.finetune, map_location='cpu', weights_only=False)
+    #     print("Load pre-trained checkpoint from: %s" % args.finetune)
+    #     checkpoint_model = checkpoint['model']
+    #     state_dict = model.state_dict()
+    #     for k in ['head.weight', 'head.bias', 'pos_embed', 'patch_embed.proj.weight', 'patch_embed.proj.bias']:
+    #         if k in checkpoint_model and checkpoint_model[k].shape != state_dict[k].shape:
+    #             print(f"Removing key {k} from pretrained checkpoint")
+    #             del checkpoint_model[k]
+    #     # load pre-trained model
+    #     msg = model.load_state_dict(checkpoint_model, strict=False)
+    #     print(msg)
+    #     # manually initialize fc layer
+    #     if args.head_layers == 1:
+    #         trunc_normal_(model.head.weight, std=2e-5)
 
-    if args.lora:
-        model.freeze_encoder_lora()
-    elif args.prefix_tuning:
-        model.freeze_encoder_prefix()
-    elif args.frozen_blocks is not None:
-        model.freeze_encoder(args.frozen_blocks)
-    else:
-        model.freeze_encoder()
+    # if args.lora:
+    #     model.freeze_encoder_lora()
+    # elif args.prefix_tuning:
+    #     model.freeze_encoder_prefix()
+    # elif args.frozen_blocks is not None:
+    #     model.freeze_encoder(args.frozen_blocks)
+    # else:
+    #     model.freeze_encoder()
 
-    model.unfreeze_patch_embed()
+    # model.unfreeze_patch_embed()
+
+    print("The path of the pruned model is: ", args.model_path)
+    model = torch.load(args.model_path, weights_only=False)
+
+    print(model)
+
+    # model.unfreeze_patch_embed()
+    for param in model.blocks.parameters():
+            param.requires_grad = False
+    
+    # Freeze positional embeddings and tokens
+    if hasattr(model, "cls_token"):
+        model.cls_token.requires_grad = False
+    if hasattr(model, "pos_embed"):
+        model.pos_embed.requires_grad = False
+    if hasattr(model, "mask_token"):
+        model.mask_token.requires_grad = False
+    if hasattr(model, "decoder_pos_embed"):
+        model.decoder_pos_embed.requires_grad = False
+
+    # Confirm that only the classification head is trainable
+    for name, param in model.named_parameters():
+        print(f"{name}: {'Trainable' if param.requires_grad else 'Frozen'}")
+
     model = model.to(device)
+
     model_without_ddp = model
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
 
@@ -259,7 +334,7 @@ def main(args):
     for name, param in model.named_parameters():
         print(f"{name}: {'Trainable' if param.requires_grad else 'Frozen'}")
 
-    print("The number of frozen blocks is: ", args.frozen_blocks)
+    # print("The number of frozen blocks is: ", args.frozen_blocks)
 
     eff_batch_size = args.batch_size * args.accum_iter
     
@@ -276,6 +351,7 @@ def main(args):
     param_groups = lrd.param_groups_lrd(model_without_ddp, args.weight_decay, layer_decay=args.layer_decay)
     optimizer = torch.optim.AdamW(param_groups, lr=args.lr)
     loss_scaler = NativeScaler()
+    class_weights = dataset_train.class_weights.to(device)
 
     if mixup_fn is not None:
         # smoothing is handled with mixup label transform
@@ -283,7 +359,7 @@ def main(args):
     elif args.smoothing > 0.:
         criterion = LabelSmoothingCrossEntropy(smoothing=args.smoothing)
     else:
-        criterion = torch.nn.CrossEntropyLoss()
+        criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
 
     print("criterion = %s" % str(criterion))
 
@@ -313,7 +389,7 @@ def main(args):
         if test_stats["pca"] == max_accuracy:
             print("A new better model has been saved ... ")
             torch.save(model, os.path.join(args.output_dir, "best_model.pth"))
-            
+
         if log_writer is not None:
             log_writer.add_scalar('perf/test_pca', test_stats['pca'], epoch)
             log_writer.add_scalar('perf/test_acc1', test_stats['acc1'], epoch)

@@ -267,7 +267,7 @@ def main(args):
         print(msg)
 
     elif args.finetune:
-        checkpoint = torch.load(args.finetune, map_location='cpu')
+        checkpoint = torch.load(args.finetune, map_location='cpu', weights_only=False)
         print("Load pre-trained checkpoint from: %s" % args.finetune)
         checkpoint_model = checkpoint['model']
         state_dict = model.state_dict()
@@ -298,6 +298,12 @@ def main(args):
 
     print("Model = %s" % str(model_without_ddp))
     print('number of params (M): %.2f' % (n_parameters / 1.e6))
+
+    # Confirm that only the classification head is trainable
+    for name, param in model.named_parameters():
+        print(f"{name}: {'Trainable' if param.requires_grad else 'Frozen'}")
+
+    print("The number of frozen blocks is: ", args.frozen_blocks)
 
     eff_batch_size = args.batch_size * args.accum_iter
     
@@ -348,6 +354,10 @@ def main(args):
         print(f"Mean per-class accuracy of the network on the {len(dataset_val)} test images: {test_stats['pca']:.3f}%")
         max_accuracy = max(max_accuracy, test_stats["pca"])
         print(f'Max accuracy: {max_accuracy:.3f}%')
+
+        if test_stats["pca"] == max_accuracy:
+            print("A new better model has been saved ... ")
+            torch.save(model, os.path.join(args.output_dir, "best_model.pth"))
 
         if log_writer is not None:
             log_writer.add_scalar('perf/test_pca', test_stats['pca'], epoch)

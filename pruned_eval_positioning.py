@@ -7,6 +7,8 @@ import matplotlib.pyplot as plt
 import random
 from pathlib import Path
 from torch.utils.data import DataLoader
+from pruned_engine_finetune_regression import forward
+import timm
 
 def reverse_normalize(x, coord_min, coord_max):
     return (x + 1) / 2 * (coord_max - coord_min) + coord_min
@@ -36,8 +38,13 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 # msg = model.load_state_dict(checkpoint['model'], strict=True)
 # print(msg)
 
-model = torch.load('tasks_models/positioning/best_model.pth', weights_only=False)
+model = torch.load('/home/ict317-3/Mohammad/Tiny-WFMs/pruned_results/positioning/best_model.pth', weights_only=False)
 
+for m in model.modules():
+            if isinstance(m, timm.models.vision_transformer.Attention):
+                m.forward = forward.__get__(m, timm.models.vision_transformer.Attention)
+
+                
 # Move model to the chosen device
 model = model.to(device)
 
@@ -101,7 +108,7 @@ axs[1].set_ylabel('Probability Density', fontsize=16)
 axs[1].legend(fontsize=16)
 
 plt.tight_layout()
-plt.savefig('Figures/hist_positioning.png', dpi=300)
+plt.savefig('/pruning_results/positioning/hist_positioning.png', dpi=300)
 plt.show()
 
 # distances_train.sort()

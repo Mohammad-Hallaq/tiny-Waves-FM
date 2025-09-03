@@ -45,10 +45,12 @@ def get_args_parser():
                         help='Accumulate gradient iterations '
                              '(for increasing the effective batch size under memory constraints)')
     # Model parameters
-    parser.add_argument('--model', default='ce_large_patch16', type=str, metavar='MODEL',
+    parser.add_argument('--model', default='ce_small_patch16', type=str, metavar='MODEL',
                         help='Name of model to train')
     parser.add_argument('--input_size', default=224, type=int,
                         help='images input size')
+    parser.add_argument('--head_layers', default=1, type=int,
+                        help='number of layers in task head')
     parser.add_argument('--drop_path', type=float, default=0.1, metavar='PCT',
                         help='Drop path rate (default: 0.1)')
     parser.add_argument('--frozen_blocks', type=int, help='number of encoder blocks to freeze. Freezes all by default')
@@ -184,6 +186,8 @@ def main(args):
         # load pre-trained model
         msg = model.load_state_dict(checkpoint_model, strict=False)
         print(msg)
+        print(model)
+        exit()
 
     if args.frozen_blocks is not None:
         model.freeze_encoder(args.frozen_blocks)

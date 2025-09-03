@@ -1,0 +1,15 @@
+h5py==3.13.0
+matplotlib==3.10.1
+numpy==2.2.3
+pillow==11.1.0
+scikit-learn==1.6.1
+scipy==1.15.2
+seaborn==0.13.2
+# sigmf
+# sionna
+# tensorflow
+timm==1.0.15
+torch==2.6.0
+torchvision==0.21.0
+tqdm==4.67.1
+torch-pruning==1.5.1

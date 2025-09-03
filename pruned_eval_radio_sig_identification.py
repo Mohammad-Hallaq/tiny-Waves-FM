@@ -12,6 +12,10 @@ import random
 from pathlib import Path
 import matplotlib.pyplot as plt
 import seaborn as sns
+from pruned_engine_finetune_regression import forward
+import timm
+
+
 plt.rcParams['font.family'] = 'serif'
 
 
@@ -38,7 +42,12 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 # checkpoint = torch.load(Path('output_dir/checkpoint-299.pth'), map_location='cpu', weights_only=False)
 # msg = model.load_state_dict(checkpoint['model'], strict=True)
 # print(msg)
-model = torch.load('tasks_models/sig_identification/best_model.pth', weights_only=False)
+model = torch.load('/home/ict317-3/Mohammad/Tiny-WFMs/pruned_results/sig_identification/best_model.pth', weights_only=False)
+
+for m in model.modules():
+            if isinstance(m, timm.models.vision_transformer.Attention):
+                m.forward = forward.__get__(m, timm.models.vision_transformer.Attention)
+
 model = model.to(device)
 model.eval()
 
@@ -88,5 +97,5 @@ axs[1].tick_params(axis='x', which='both', bottom=False, top=False, labelbottom=
 axs[0].set_title(f'Train - Accuracy: {accuracy_train:.2f}')
 axs[1].set_title(f'Test - Accuracy: {accuracy_test:.2f}')
 plt.tight_layout()
-plt.savefig(Path('Figures/conf_mat_radio_identification.png'), dpi=400)
+plt.savefig(Path('/pruning_results/sig_identification/conf_mat_radio_identification.png'), dpi=400)
 plt.show()
