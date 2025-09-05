@@ -49,8 +49,6 @@ def get_args_parser():
                         help='Name of model to train')
     parser.add_argument('--input_size', default=224, type=int,
                         help='images input size')
-    parser.add_argument('--head_layers', default=1, type=int,
-                        help='number of layers in task head')
     parser.add_argument('--drop_path', type=float, default=0.1, metavar='PCT',
                         help='Drop path rate (default: 0.1)')
     parser.add_argument('--frozen_blocks', type=int, help='number of encoder blocks to freeze. Freezes all by default')
@@ -186,8 +184,6 @@ def main(args):
         # load pre-trained model
         msg = model.load_state_dict(checkpoint_model, strict=False)
         print(msg)
-        print(model)
-        exit()
 
     if args.frozen_blocks is not None:
         model.freeze_encoder(args.frozen_blocks)
@@ -201,6 +197,13 @@ def main(args):
 
     print("Model = %s" % str(model_without_ddp))
     print('number of params (M): %.2f' % (n_parameters / 1.e6))
+
+     # Confirm that only the classification head is trainable
+    for name, param in model.named_parameters():
+        print(f"{name}: {'Trainable' if param.requires_grad else 'Frozen'}")
+
+    print("The number of frozen blocks is: ", args.frozen_blocks)
+
 
     eff_batch_size = args.batch_size * args.accum_iter
     
@@ -249,6 +252,10 @@ def main(args):
         print(f"Error of the network on the {len(dataset_val)} test images: {test_stats['loss']:.4f}")
         min_error = min(min_error, test_stats["loss"])
         print(f'Test error: {min_error:.4f}')
+
+        if test_stats["loss"] == min_error:
+            print("A new better model has been saved ... ")
+            torch.save(model, os.path.join(args.output_dir, "best_model.pth"))
 
         if log_writer is not None:
             log_writer.add_scalar('perf/test_loss', test_stats['loss'], epoch)

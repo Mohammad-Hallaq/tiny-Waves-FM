@@ -134,7 +134,7 @@ def get_args_parser():
     parser.add_argument('--global_pool', default='token')
 
     # Dataset parameters
-    parser.add_argument('--data_path', default='', type=str,
+    parser.add_argument('--data_path', default='/home/ict317-3/Mohammad/Tiny-WFMs/downstream_tasks_datasets/radio_sig_identification', type=str,
                         help='dataset path')
     parser.add_argument('--nb_classes', default=20, type=int,
                         help='number of the classification types')
