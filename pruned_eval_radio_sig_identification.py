@@ -44,6 +44,10 @@ def main(args):
     # checkpoint = torch.load(Path('output_dir/checkpoint-299.pth'), map_location='cpu', weights_only=False)
     # msg = model.load_state_dict(checkpoint['model'], strict=True)
     # print(msg)
+
+    tail = args.model_path.partition(".")[0]
+    p_ratio = ''.join(ch for ch in tail[-3:-1] if ch.isdigit()) or "xx"
+
     model = torch.load(Path(args.model_path), weights_only=False)
 
     for m in model.modules():
@@ -51,11 +55,11 @@ def main(args):
                     m.forward = forward.__get__(m, timm.models.vision_transformer.Attention)
 
     if len(model.blocks) != 12:
-        hist_dir = os.path.join(args.save_dir, f'results_for_{len(model.blocks)}_blocks')
+        conf_dir = os.path.join(args.save_dir, f'results_for_{len(model.blocks)}_blocks')
     else:
-        hist_dir = os.path.join(args.save_dir)
+        conf_dir = os.path.join(args.save_dir)
 
-    os.makedirs(hist_dir, exist_ok=True)
+    os.makedirs(conf_dir, exist_ok=True)
     
     model = model.to(device)
     model.eval()
@@ -106,7 +110,7 @@ def main(args):
     axs[0].set_title(f'Train - Accuracy: {accuracy_train:.2f}')
     axs[1].set_title(f'Test - Accuracy: {accuracy_test:.2f}')
     plt.tight_layout()
-    plt.savefig(os.path.join(hist_dir, 'conf_mat_radio_identification.png'), dpi=400)
+    plt.savefig(os.path.join(conf_dir, f'conf_mat_radio_identification_{p_ratio}%.png'), dpi=400)
     plt.show()
 
 if __name__ == '__main__':

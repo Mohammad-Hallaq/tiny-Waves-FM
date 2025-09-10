@@ -43,6 +43,9 @@ def main(args):
     # msg = model.load_state_dict(checkpoint['model'], strict=True)
     # print(msg)
 
+    tail = args.model_path.partition(".")[0]
+    p_ratio = ''.join(ch for ch in tail[-3:-1] if ch.isdigit()) or "xx"
+
     model = torch.load(Path(args.model_path), weights_only=False)
 
     for m in model.modules():
@@ -120,7 +123,7 @@ def main(args):
     axs[1].legend(fontsize=16)
 
     plt.tight_layout()
-    plt.savefig(os.path.join(hist_dir, 'hist_positioning.png'), dpi=300)
+    plt.savefig(os.path.join(hist_dir, f'hist_positioning_{p_ratio}%.png'), dpi=300)
     plt.show()
 
 if __name__ == '__main__':

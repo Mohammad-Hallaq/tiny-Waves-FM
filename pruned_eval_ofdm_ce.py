@@ -42,7 +42,11 @@ ckpt = '%s_checkpoint-230.pth'
 
 models = list()
 
-model = torch.load('/home/ict317-3/Mohammad/Tiny-WFMs/pruning_results/ofdm_ce/best_model.pth', weights_only=False)
+model_path = '/home/ict317-3/Mohammad/Tiny-WFMs/pruning_results/ofdm_ce/best_model_45%.pth'
+tail = model_path.partition(".")[0]
+p_ratio = ''.join(ch for ch in tail[-3:-1] if ch.isdigit()) or "xx"
+
+model = torch.load(model_path, weights_only=False)
 for m in model.modules():
     if isinstance(m, timm.models.vision_transformer.Attention):
         m.forward = forward.__get__(m, timm.models.vision_transformer.Attention)
@@ -167,6 +171,6 @@ ax.grid(True)
 ax.set_xlabel('SNR (dB)', fontsize=16)
 ax.set_ylabel('MSE', fontsize=16)
 plt.tight_layout()
-plt.savefig('/home/ict317-3/Mohammad/Tiny-WFMs/pruning_results/ofdm_ce/ofdm_ce_mse.png')
+plt.savefig(f'pruning_results/ofdm_ce/ofdm_ce_mse_{p_ratio}%.png')
 plt.show()
 test = []

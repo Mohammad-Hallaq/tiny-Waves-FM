@@ -39,6 +39,7 @@ from dataset_classes.radio_sig import RadioSignal
 
 from pruned_engine_finetune import train_one_epoch, evaluate
 
+from task_builder import *
 
 def get_args_parser():
     parser = argparse.ArgumentParser('MAE fine-tuning for Radio Signal Identification', add_help=False)
@@ -57,7 +58,8 @@ def get_args_parser():
 
     parser.add_argument('--model_path', default='', type=str, metavar='MODEL',
                         help='Path to the pruned model')
-
+    parser.add_argument('--num_blocks', default=1, type=int,
+                        help='Number of encoder blocks to keep')
 
     parser.add_argument('--input_size', default=224, type=int,
                         help='images input size')
@@ -134,7 +136,7 @@ def get_args_parser():
     parser.add_argument('--global_pool', default='token')
 
     # Dataset parameters
-    parser.add_argument('--data_path', default='/home/ict317-3/Mohammad/Tiny-WFMs/downstream_tasks_datasets/radio_sig_identification', type=str,
+    parser.add_argument('--data_path', default='downstream_tasks_datasets/radio_sig_identification', type=str,
                         help='dataset path')
     parser.add_argument('--nb_classes', default=20, type=int,
                         help='number of the classification types')
@@ -300,9 +302,15 @@ def main(args):
     # model.unfreeze_patch_embed()
 
     print("The path of the pruned model is: ", args.model_path)
-    model = torch.load(args.model_path, weights_only=False)
 
-    print(model)
+    cfg = BuildConfig(pruned_vit_path=args.model_path, task='radio', num_blocks=args.num_blocks)
+    builder = ViTTaskBuilder(cfg)
+
+    model = builder.build() 
+
+    prunin_ratio = builder.p_ratio
+
+    # print(model)
 
     # model.unfreeze_patch_embed()
     for param in model.blocks.parameters():
@@ -329,12 +337,6 @@ def main(args):
 
     print("Model = %s" % str(model_without_ddp))
     print('number of params (M): %.2f' % (n_parameters / 1.e6))
-
-    # Confirm that only the classification head is trainable
-    for name, param in model.named_parameters():
-        print(f"{name}: {'Trainable' if param.requires_grad else 'Frozen'}")
-
-    # print("The number of frozen blocks is: ", args.frozen_blocks)
 
     eff_batch_size = args.batch_size * args.accum_iter
     
@@ -388,7 +390,7 @@ def main(args):
 
         if test_stats["pca"] == max_accuracy:
             print("A new better model has been saved ... ")
-            torch.save(model, os.path.join(args.output_dir, "best_model.pth"))
+            torch.save(model, os.path.join(args.output_dir, f"best_model_{prunin_ratio}%.pth"))
 
         if log_writer is not None:
             log_writer.add_scalar('perf/test_pca', test_stats['pca'], epoch)

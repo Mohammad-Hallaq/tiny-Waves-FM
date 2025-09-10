@@ -35,6 +35,7 @@ from pruned_engine_finetune_regression_ce import train_one_epoch, evaluate
 from dataset_classes.ofdm_channel_estimation import OfdmChannelEstimation
 from snr_weighted_loss import WeightedLoss
 
+from task_builder import *
 
 def get_args_parser():
     parser = argparse.ArgumentParser('MAE fine-tuning for MIMO/OFDM Channel Estimation', add_help=False)
@@ -50,6 +51,8 @@ def get_args_parser():
 
     parser.add_argument('--model_path', default='', type=str, metavar='MODEL',
                         help='Path to the pruned model')
+    parser.add_argument('--num_blocks', default=1, type=int,
+                        help='Number of encoder blocks to keep')
     
     parser.add_argument('--input_size', default=224, type=int,
                         help='images input size')
@@ -197,9 +200,15 @@ def main(args):
     # model.unfreeze_patch_embed()
 
     print("The path of the pruned model is: ", args.model_path)
-    model = torch.load(args.model_path, weights_only=False)
 
-    print(model)
+    cfg = BuildConfig(pruned_vit_path=args.model_path, task='ofdm', num_blocks=args.num_blocks)
+    builder = ViTTaskBuilder(cfg)
+
+    model = builder.build() #torch.load(args.model_path, weights_only=False)
+
+    # print(model)
+
+    prunin_ratio = builder.p_ratio
 
     for param in model.blocks.parameters():
             param.requires_grad = False
@@ -225,15 +234,6 @@ def main(args):
 
     print("Model = %s" % str(model_without_ddp))
     print('number of params (M): %.2f' % (n_parameters / 1.e6))
-
-     # Confirm that only the classification head is trainable
-    for name, param in model.named_parameters():
-        print(f"{name}: {'Trainable' if param.requires_grad else 'Frozen'}")
-
-    # Confirm that only the classification head is trainable
-    for name, param in model.named_parameters():
-        print(f"{name}: {'Trainable' if param.requires_grad else 'Frozen'}")
-
 
     eff_batch_size = args.batch_size * args.accum_iter
     
@@ -285,11 +285,7 @@ def main(args):
 
         if test_stats["loss"] == min_error:
             print("A new better model has been saved ... ")
-            torch.save(model, os.path.join(args.output_dir, "best_model.pth"))
-
-        if test_stats["loss"] == min_error:
-            print("A new better model has been saved ... ")
-            torch.save(model, os.path.join(args.output_dir, "best_model.pth"))
+            torch.save(model, os.path.join(args.output_dir, f"best_model_{prunin_ratio}%.pth"))
 
         if log_writer is not None:
             log_writer.add_scalar('perf/test_loss', test_stats['loss'], epoch)

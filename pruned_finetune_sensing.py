@@ -16,43 +16,43 @@ import numpy as np
 import os
 import time
 from pathlib import Path
-import random
 
 import torch
 import torch.backends.cudnn as cudnn
 from torch.utils.tensorboard import SummaryWriter
-from torch.utils.data import SequentialSampler, DataLoader, RandomSampler
 
 import util.lr_decay as lrd
 import util.misc as misc
 from util.misc import NativeScalerWithGradNormCount as NativeScaler
 from timm.layers import trunc_normal_
+from timm.loss import LabelSmoothingCrossEntropy, SoftTargetCrossEntropy
 from timm.data.mixup import Mixup
-from advanced_finetuning.lora import create_lora_model
+from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 
 import models_vit
-import math
-
-from pruned_engine_finetune_regression import train_one_epoch, evaluate
-from dataset_classes.positioning import Positioning5G
+from advanced_finetuning.lora import create_lora_model
 from advanced_finetuning.prefix import create_prefix_tuning_model
+
+from pruned_engine_finetune import train_one_epoch, evaluate
+from dataset_classes.csi_sensing import CSISensingDataset
 
 from task_builder import *
 
 def get_args_parser():
-    parser = argparse.ArgumentParser('MAE fine-tuning for 5G NR Positioning', add_help=False)
+    parser = argparse.ArgumentParser('MAE fine-tuning for CSI sensing', add_help=False)
     parser.add_argument('--batch_size', default=256, type=int,
                         help='Batch size per GPU (effective batch size is batch_size * accum_iter * # gpus')
-    parser.add_argument('--epochs', default=300, type=int)
+    parser.add_argument('--epochs', default=100, type=int)
     parser.add_argument('--accum_iter', default=1, type=int,
-                        help='Accumulate gradient iterations ('
-                             'for increasing the effective batch size under memory constraints)')
+                        help='Accumulate gradient iterations '
+                             '(for increasing the effective batch size under memory constraints)')
     parser.add_argument('--seed', type=int, default=42,
                         help='seed for initializing training.')
+
     # Model parameters
     # parser.add_argument('--model', default='vit_small_patch16', type=str, metavar='MODEL',
     #                     help='Name of model to train')
-    
+
     parser.add_argument('--model_path', default='', type=str, metavar='MODEL',
                         help='Path to the pruned model')
     parser.add_argument('--num_blocks', default=1, type=int,
@@ -60,12 +60,10 @@ def get_args_parser():
 
     parser.add_argument('--input_size', default=224, type=int,
                         help='images input size')
-    # parser.add_argument('--head_layers', default=1, type=int,
-    #                     help='number of layers in task head')
+
     parser.add_argument('--drop_path', type=float, default=0.1, metavar='PCT',
                         help='Drop path rate (default: 0.1)')
-    # parser.add_argument('--frozen_blocks', type=int, help='number of encoder blocks to freeze. Freezes all by default')
-    parser.add_argument('--tanh', action='store_true', default=False)
+    parser.add_argument('--frozen_blocks', type=int, help='number of encoder blocks to freeze. Freezes all by default')
 
     # Optimizer parameters
     parser.add_argument('--clip_grad', type=float, default=None, metavar='NORM',
@@ -83,7 +81,7 @@ def get_args_parser():
     parser.add_argument('--min_lr', type=float, default=1e-6, metavar='LR',
                         help='lower lr bound for cyclic schedulers that hit 0')
 
-    parser.add_argument('--warmup_epochs', type=int, default=15, metavar='N',
+    parser.add_argument('--warmup_epochs', type=int, default=10, metavar='N',
                         help='epochs to warmup LR')
 
     # LoRa Parameters
@@ -98,22 +96,49 @@ def get_args_parser():
 
     parser.add_argument('--num_prefix_tokens', type=int, default=20, help='Number of prefix tokens')
 
+    # Augmentation parameters
+    parser.add_argument('--smoothing', type=float, default=0,
+                        help='Label smoothing (default: 0)')
+
+    # * Random Erase params
+    parser.add_argument('--reprob', type=float, default=0.25, metavar='PCT',
+                        help='Random erase prob (default: 0.25)')
+    parser.add_argument('--remode', type=str, default='pixel',
+                        help='Random erase mode (default: "pixel")')
+    parser.add_argument('--recount', type=int, default=1,
+                        help='Random erase count (default: 1)')
+    parser.add_argument('--resplit', action='store_true', default=False,
+                        help='Do not random erase first (clean) augmentation split')
+
+    # * Mixup params
+    parser.add_argument('--mixup', type=float, default=0,
+                        help='mixup alpha, mixup enabled if > 0.')
+    parser.add_argument('--cutmix', type=float, default=0,
+                        help='cutmix alpha, cutmix enabled if > 0.')
+    parser.add_argument('--cutmix_minmax', type=float, nargs='+', default=None,
+                        help='cutmix min/max ratio, overrides alpha and enables cutmix if set (default: None)')
+    parser.add_argument('--mixup_prob', type=float, default=1.0,
+                        help='Probability of performing mixup or cutmix when either/both is enabled')
+    parser.add_argument('--mixup_switch_prob', type=float, default=0.5,
+                        help='Probability of switching to cutmix when both mixup and cutmix enabled')
+    parser.add_argument('--mixup_mode', type=str, default='batch',
+                        help='How to apply mixup/cutmix params. Per "batch", "pair", or "elem"')
+
     # * Finetuning params
     parser.add_argument('--finetune', default='',
                         help='finetune from checkpoint')
-    parser.add_argument('--global_pool', default='avg')
+    parser.add_argument('--global_pool', default='token')
 
     # Dataset parameters
-    parser.add_argument('--scene', default='outdoor', type=str, choices=['indoor', 'outdoor'],
-                        help='Scene to use')
-    parser.add_argument('--data_path', default='downstream_tasks_datasets/5G_NR_Positioning', type=str,
+    parser.add_argument('--data_path', default='downstream_tasks_datasets/NTU-Fi_HAR', type=str,
                         help='dataset path')
-    parser.add_argument('--nb_outputs', default=3, type=int,
-                        help='number of outputs')
+    parser.add_argument('--nb_classes', default=6, type=int,
+                        help='number of the classification types')
+    parser.add_argument('--downsampled', action='store_true', default=False)
 
-    parser.add_argument('--output_dir', default='./pruning_results/positioning',
+    parser.add_argument('--output_dir', default='pruning_results/sensing',
                         help='path where to save, empty for no saving')
-    parser.add_argument('--log_dir', default='./pruning_results/positioning',
+    parser.add_argument('--log_dir', default='pruning_results/sensing',
                         help='path where to tensorboard log')
     parser.add_argument('--device', default='cuda',
                         help='device to use for training / testing')
@@ -151,12 +176,11 @@ def main(args):
     print(f"seed is {args.seed}")
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
-    random.seed(args.seed)
 
     cudnn.benchmark = True
 
-    dataset_train = Positioning5G(Path(os.path.join(args.data_path, f'{args.scene}/train')))
-    dataset_val = Positioning5G(Path(os.path.join(args.data_path, f'{args.scene}/test')))
+    dataset_train = CSISensingDataset(os.path.join(args.data_path, 'train'), downsampled=args.downsampled)
+    dataset_val = CSISensingDataset(os.path.join(args.data_path, 'test'), downsampled=args.downsampled)
 
     sampler_train = RandomSampler(dataset_train)
     sampler_val = SequentialSampler(dataset_val)
@@ -179,21 +203,31 @@ def main(args):
         pin_memory=args.pin_mem,
         drop_last=False
     )
-    print("The path of the pruned model is: ", args.model_path)
 
-    cfg = BuildConfig(pruned_vit_path=args.model_path, task='positioning', num_blocks=args.num_blocks)
-    builder = ViTTaskBuilder(cfg)
+    mixup_active = args.mixup > 0 or args.cutmix > 0. or args.cutmix_minmax is not None
+    if mixup_active:
+        print("Mixup is activated!")
+        mixup_fn = Mixup(
+            mixup_alpha=args.mixup, cutmix_alpha=args.cutmix, cutmix_minmax=args.cutmix_minmax,
+            prob=args.mixup_prob, switch_prob=args.mixup_switch_prob, mode=args.mixup_mode,
+            label_smoothing=args.smoothing, num_classes=args.nb_classes)
+    else:
+        mixup_fn = None
 
-    model = builder.build() 
-
-    prunin_ratio = builder.p_ratio
-
-    # print(model)
-
+    # model = models_vit.__dict__[args.model](global_pool=args.global_pool, num_classes=args.nb_classes,
+    #                                         drop_path_rate=args.drop_path, prefix_tuning=args.prefix_tuning,
+    #                                         num_prefix_tokens=args.num_prefix_tokens)
     # if args.lora:
     #     model = create_lora_model(model, args.lora_rank, args.lora_alpha)
     # elif args.prefix_tuning:
     #     model = create_prefix_tuning_model(model, pool='token')
+
+    # if args.resume:
+    #     checkpoint = torch.load(args.resume, map_location='cpu')
+    #     print("Load pre-trained checkpoint from: %s" % args.resume)
+    #     checkpoint_model = checkpoint['model']
+    #     msg = model.load_state_dict(checkpoint_model, strict=True)
+    #     print(msg)
 
     # elif args.finetune:
     #     checkpoint = torch.load(args.finetune, map_location='cpu', weights_only=False)
@@ -208,8 +242,7 @@ def main(args):
     #     msg = model.load_state_dict(checkpoint_model, strict=False)
     #     print(msg)
     #     # manually initialize fc layer
-    #     if args.head_layers == 1:
-    #         trunc_normal_(model.head.weight, std=2e-5)
+    #     trunc_normal_(model.head.weight, std=2e-5)
 
     # if args.lora:
     #     model.freeze_encoder_lora()
@@ -219,6 +252,17 @@ def main(args):
     #     model.freeze_encoder(args.frozen_blocks)
     # else:
     #     model.freeze_encoder()
+
+    # model.unfreeze_patch_embed()
+
+    print("The path of the pruned model is: ", args.model_path)
+
+    cfg = BuildConfig(pruned_vit_path=args.model_path, task='sensing', num_blocks=args.num_blocks)
+    builder = ViTTaskBuilder(cfg)
+
+    model = builder.build() 
+
+    prunin_ratio = builder.p_ratio
 
     # model.unfreeze_patch_embed()
     for param in model.blocks.parameters():
@@ -238,7 +282,10 @@ def main(args):
     for name, param in model.named_parameters():
         print(f"{name}: {'Trainable' if param.requires_grad else 'Frozen'}")
 
+    print("The number of frozen blocks is: ", args.frozen_blocks)
+
     model = model.to(device)
+
     model_without_ddp = model
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
 
@@ -261,19 +308,26 @@ def main(args):
     optimizer = torch.optim.AdamW(param_groups, lr=args.lr)
     loss_scaler = NativeScaler()
 
-    criterion = torch.nn.MSELoss()
+    if mixup_fn is not None:
+        # smoothing is handled with mixup label transform
+        criterion = SoftTargetCrossEntropy()
+    elif args.smoothing > 0.:
+        criterion = LabelSmoothingCrossEntropy(smoothing=args.smoothing)
+    else:
+        criterion = torch.nn.CrossEntropyLoss()
+
     print("criterion = %s" % str(criterion))
 
     misc.load_model(args=args, model_without_ddp=model_without_ddp, optimizer=optimizer, loss_scaler=loss_scaler)
 
     print(f"Start training for {args.epochs} epochs")
     start_time = time.time()
-    min_error = math.inf
+    max_accuracy = 0.0
     for epoch in range(args.start_epoch, args.epochs):
         train_stats = train_one_epoch(
             model, criterion, data_loader_train,
             optimizer, device, epoch, loss_scaler,
-            args.clip_grad, None,
+            args.clip_grad, mixup_fn,
             log_writer=log_writer,
             args=args
         )
@@ -282,26 +336,20 @@ def main(args):
                 args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
                 loss_scaler=loss_scaler, epoch=epoch)
 
-        test_stats = evaluate(
-            data_loader_val, model, criterion, device,
-            dataset_train.coord_nominal_min, dataset_train.coord_nominal_max
-        )
-        print(f"Test loss on the {len(dataset_val)} test images: {test_stats['loss']:.4f}")
-        print(f"Mean distance error: {test_stats['mean_distance_error']:.4f}, "
-              f"Stdev distance error: {test_stats['stdev_distance_error']:.4f}")
+        test_stats = evaluate(data_loader_val, model, criterion, device)
+        print(f"Mean per-class accuracy of the network on the {len(dataset_val)} test images: {test_stats['pca']:.3f}%")
+        max_accuracy = max(max_accuracy, test_stats["pca"])
+        print(f'Max accuracy: {max_accuracy:.3f}%')
 
-        # Use the mean distance error as the main error metric for updating min_error.
-        min_error = min(min_error, test_stats["mean_distance_error"])
-        print(f'Minimum mean distance error: {min_error:.4f}')
-
-        if test_stats["mean_distance_error"] == min_error:
+        if test_stats["pca"] == max_accuracy:
             print("A new better model has been saved ... ")
             torch.save(model, os.path.join(args.output_dir, f"best_model_{prunin_ratio}%.pth"))
-
+            
         if log_writer is not None:
+            log_writer.add_scalar('perf/test_pca', test_stats['pca'], epoch)
+            log_writer.add_scalar('perf/test_acc1', test_stats['acc1'], epoch)
+            log_writer.add_scalar('perf/test_acc3', test_stats['acc3'], epoch)
             log_writer.add_scalar('perf/test_loss', test_stats['loss'], epoch)
-            log_writer.add_scalar('perf/test_mean_distance_error', test_stats['mean_distance_error'], epoch)
-            log_writer.add_scalar('perf/test_stdev_distance_error', test_stats['stdev_distance_error'], epoch)
 
         if args.lora:
             log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
